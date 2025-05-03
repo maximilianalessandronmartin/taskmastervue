@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  # Development service with hot-reload
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: taskmaster-dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    command: npm run dev -- --host
+
+  # Production service
+  app-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskmaster-prod
+    ports:
+      - "80:80"
+    restart: unless-stopped
