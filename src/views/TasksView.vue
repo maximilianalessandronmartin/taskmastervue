@@ -173,7 +173,7 @@ onMounted(fetchTasks);
               label="Search tasks"
               prepend-icon="mdi-magnify"
               clearable
-              hide-details
+              :hide-details="'auto'"
             ></v-text-field>
           </v-col>
           <v-col cols="12" sm="4">
@@ -188,14 +188,14 @@ onMounted(fetchTasks);
               ]"
               item-title="title"
               item-value="value"
-              hide-details
+              :hide-details="true"
             ></v-select>
           </v-col>
           <v-col cols="12" sm="4">
             <v-switch
               v-model="showCompleted"
               label="Show completed tasks"
-              hide-details
+              :hide-details="true"
             ></v-switch>
           </v-col>
         </v-row>
@@ -216,7 +216,7 @@ onMounted(fetchTasks);
                 :model-value="task.completed"
                 @change="completeTask(task.id)"
                 :disabled="task.completed || loading"
-                hide-details
+                :hide-details="true"
               ></v-checkbox>
             </template>
 

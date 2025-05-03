@@ -87,7 +87,7 @@ const resetAccount = async () => {
           :label="`Theme: ${themeStore.isDarkMode ? 'Dark' : 'Light'} Mode`"
           @change="themeStore.toggleTheme()"
           color="primary"
-          hide-details
+          :hide-details="true"
         >
           <template v-slot:prepend>
             <!-- Dynamic icon based on current theme -->
@@ -150,8 +150,8 @@ const resetAccount = async () => {
         </v-card-text>
         <v-card-actions>
           <v-spacer></v-spacer>
-          <v-btn color="secondary" text @click="confirmDialog = false">Cancel</v-btn>
-          <v-btn color="error" text @click="logout">Logout</v-btn>
+          <v-btn color="secondary" @click="confirmDialog = false">Cancel</v-btn>
+          <v-btn color="error" @click="logout">Logout</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -166,8 +166,8 @@ const resetAccount = async () => {
         </v-card-text>
         <v-card-actions>
           <v-spacer></v-spacer>
-          <v-btn color="secondary" text @click="resetAccountDialog = false">Cancel</v-btn>
-          <v-btn color="warning" text @click="resetAccount">Reset Account</v-btn>
+          <v-btn color="secondary" @click="resetAccountDialog = false">Cancel</v-btn>
+          <v-btn color="warning" @click="resetAccount">Reset Account</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -175,10 +175,5 @@ const resetAccount = async () => {
 </template>
 
 <style scoped>
-.v-card {
-  transition: transform 0.3s;
-}
-.v-card:hover {
-  transform: translateY(-5px);
-}
+
 </style>
