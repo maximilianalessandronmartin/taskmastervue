@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useTaskStore } from '../store/task.store';
-import { useAuthStore } from '../store/auth.store';
+
 import { type CreateTaskDto, type TaskDto, type UpdateTaskDto } from '../types/models';
 
 const taskStore = useTaskStore();
-const authStore = useAuthStore();
+
 
 
 // Task form data

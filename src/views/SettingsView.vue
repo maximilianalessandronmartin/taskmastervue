@@ -1,17 +1,31 @@
 <script setup lang="ts">
+/**
+ * Settings View Component
+ * 
+ * This view allows users to manage their account settings, appearance preferences,
+ * and perform account-related actions like logout and account reset.
+ */
 import { ref } from 'vue';
 import { useAuthStore } from '../store/auth.store';
+import { useThemeStore } from '../store/theme.store';
 import { useRouter } from 'vue-router';
 
+// Store and router instances
 const authStore = useAuthStore();
+const themeStore = useThemeStore();
 const router = useRouter();
+
+// Reactive state variables
 const loading = ref(false);
 const confirmDialog = ref(false);
 const resetAccountDialog = ref(false);
 const error = ref('');
 const success = ref('');
 
-// Logout function
+/**
+ * Handles user logout
+ * Calls the auth store logout method and redirects to login page
+ */
 const logout = async () => {
   loading.value = true;
   try {
@@ -24,12 +38,16 @@ const logout = async () => {
   }
 };
 
-// Reset account function (placeholder - would need to be implemented in the backend)
+/**
+ * Handles account reset functionality
+ * Currently a placeholder that simulates an API call
+ * In a real implementation, this would call a backend endpoint
+ */
 const resetAccount = async () => {
   loading.value = true;
   error.value = '';
   success.value = '';
-  
+
   try {
     // This would need to be implemented in the backend
     // For now, just show a success message
@@ -43,25 +61,42 @@ const resetAccount = async () => {
   }
 };
 
-// Clear messages
-const clearMessages = () => {
-  error.value = '';
-  success.value = '';
-};
+
 </script>
 
 <template>
   <div>
     <h1 class="text-h4 mb-4">Settings</h1>
-    
+
+    <!-- Error and success alerts -->
     <v-alert v-if="error" type="error" class="mb-4">
       {{ error }}
     </v-alert>
-    
+
     <v-alert v-if="success" type="success" class="mb-4">
       {{ success }}
     </v-alert>
-    
+
+    <!-- Theme settings card -->
+    <v-card class="mb-4">
+      <v-card-title>Appearance</v-card-title>
+      <v-card-text>
+        <!-- Theme toggle switch with dynamic label and icon -->
+        <v-switch
+          v-model="themeStore.isDarkMode"
+          :label="`Theme: ${themeStore.isDarkMode ? 'Dark' : 'Light'} Mode`"
+          @change="themeStore.toggleTheme()"
+          color="primary"
+          hide-details
+        >
+          <template v-slot:prepend>
+            <!-- Dynamic icon based on current theme -->
+            <v-icon>{{ themeStore.isDarkMode ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
+          </template>
+        </v-switch>
+      </v-card-text>
+    </v-card>
+
     <v-card class="mb-4">
       <v-card-title>Account Settings</v-card-title>
       <v-card-text>
@@ -73,7 +108,7 @@ const clearMessages = () => {
         </div>
       </v-card-text>
     </v-card>
-    
+
     <v-card class="mb-4">
       <v-card-title>Actions</v-card-title>
       <v-card-text>
@@ -105,7 +140,7 @@ const clearMessages = () => {
         </v-row>
       </v-card-text>
     </v-card>
-    
+
     <!-- Logout Confirmation Dialog -->
     <v-dialog v-model="confirmDialog" max-width="400px">
       <v-card>
@@ -120,7 +155,7 @@ const clearMessages = () => {
         </v-card-actions>
       </v-card>
     </v-dialog>
-    
+
     <!-- Reset Account Confirmation Dialog -->
     <v-dialog v-model="resetAccountDialog" max-width="400px">
       <v-card>
