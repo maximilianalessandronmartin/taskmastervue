@@ -56,7 +56,7 @@ onMounted(async () => {
     </div>
 
     <v-bottom-navigation
-      v-model="currentTab"
+      :model-value="currentTab"
       color="primary"
       grow
     >

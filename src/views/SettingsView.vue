@@ -83,17 +83,18 @@ const resetAccount = async () => {
       <v-card-text>
         <!-- Theme toggle switch with dynamic label and icon -->
         <v-switch
-          v-model="themeStore.isDarkMode"
-          :label="`Theme: ${themeStore.isDarkMode ? 'Dark' : 'Light'} Mode`"
-          @change="themeStore.toggleTheme()"
-          color="primary"
-          :hide-details="true"
+            :model-value="themeStore.isDarkMode"
+            @update:model-value="themeStore.toggleTheme()"
+            :label="`Theme: ${themeStore.isDarkMode ? 'Dark' : 'Light'} Mode`"
+            color="primary"
+            :hide-details="true"
         >
           <template v-slot:prepend>
             <!-- Dynamic icon based on current theme -->
             <v-icon>{{ themeStore.isDarkMode ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
           </template>
         </v-switch>
+
       </v-card-text>
     </v-card>
 

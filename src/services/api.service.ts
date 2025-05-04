@@ -1,9 +1,12 @@
 import axios, {type AxiosInstance, type AxiosRequestConfig,type AxiosResponse } from 'axios';
 import type { AuthenticationResponse, RefreshRequestDto } from '../types/models';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+
+
 // Create a base API instance
 const apiClient: AxiosInstance = axios.create({
-  baseURL: 'http://localhost:8080/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -48,8 +51,8 @@ apiClient.interceptors.response.use(
 
         const refreshRequest: RefreshRequestDto = { token: refreshToken };
         const response = await axios.post<AuthenticationResponse>(
-          'http://localhost:8080/api/auth/refresh',
-          refreshRequest
+            `${API_BASE_URL}/auth/refresh`,
+            refreshRequest
         );
 
         // Update tokens in localStorage

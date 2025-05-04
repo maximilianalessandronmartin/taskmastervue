@@ -14,6 +14,7 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
+      - VITE_API_BASE_URL=http://192.168.178.61:8080/api
     command: npm run dev -- --host
 
   # Production service
@@ -24,4 +25,6 @@ services:
     container_name: taskmaster-prod
     ports:
       - "80:80"
+    environment:
+      - VITE_API_BASE_URL=http://192.168.178.61:8080/api
     restart: unless-stopped
