@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useTaskStore } from '../store/task.store';
+import { useFriendshipStore } from '../store/friendship.store';
 
-import { type CreateTaskDto, type TaskDto, type UpdateTaskDto } from '../types/models';
+import { type CreateTaskDto, type Friendship, type ShareTaskDto, type TaskDto, type UpdateTaskDto } from '../types/models';
 
 const taskStore = useTaskStore();
+const friendshipStore = useFriendshipStore();
+
+// Share task dialog
+const shareDialog = ref(false);
+const shareTaskId = ref('');
+const shareUsername = ref('');
+const friends = ref<Friendship[]>([]);
 
 
 
@@ -29,7 +37,8 @@ const loading = ref(false);
 
 // Computed properties
 const filteredTasks = computed(() => {
-  let tasks = taskStore.getTasks;
+  // Combine own and shared tasks
+  let tasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
 
   // Filter by completion status
   if (!showCompleted.value) {
@@ -63,8 +72,21 @@ const fetchTasks = async () => {
   loading.value = true;
   try {
     await taskStore.fetchAllTasks();
+    await taskStore.fetchSharedTasks();
   } catch (error) {
     console.error('Failed to fetch tasks:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const fetchFriends = async () => {
+  loading.value = true;
+  try {
+    await friendshipStore.fetchFriends();
+    friends.value = friendshipStore.getFriends;
+  } catch (error) {
+    console.error('Failed to fetch friends:', error);
   } finally {
     loading.value = false;
   }
@@ -155,6 +177,40 @@ const getUrgencyColor = (urgency: string) => {
   }
 };
 
+const openShareDialog = (taskId: string) => {
+  shareTaskId.value = taskId;
+  shareUsername.value = '';
+  fetchFriends();
+  shareDialog.value = true;
+};
+
+const shareTask = async () => {
+  if (!shareUsername.value || !shareTaskId.value) {
+    return;
+  }
+
+  loading.value = true;
+  try {
+    await taskStore.shareTask(shareTaskId.value, shareUsername.value);
+    shareDialog.value = false;
+  } catch (error) {
+    console.error('Failed to share task:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const unshareTask = async (taskId: string, username: string) => {
+  loading.value = true;
+  try {
+    await taskStore.unshareTask(taskId, username);
+  } catch (error) {
+    console.error('Failed to unshare task:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
 // Lifecycle hooks
 onMounted(fetchTasks);
 </script>
@@ -229,6 +285,22 @@ onMounted(fetchTasks);
                 {{ task.description }}
               </v-list-item-subtitle>
 
+              <!-- Shared with list -->
+              <div v-if="task.sharedWith && task.sharedWith.length > 0" class="shared-with-list mt-2">
+                <div class="shared-with-title">Shared with:</div>
+                <v-chip
+                  v-for="user in task.sharedWith"
+                  :key="user.id"
+                  size="small"
+                  class="mr-1 mt-1"
+                  closable
+                  @click:close="unshareTask(task.id, user.username)"
+                  :disabled="loading || !task.owner"
+                >
+                  {{ user.username }}
+                </v-chip>
+              </div>
+
               <div class="task-metadata">
                 <div class="task-info">
                   <v-chip
@@ -241,6 +313,9 @@ onMounted(fetchTasks);
                   <v-chip size="small" class="mr-2 mt-1">
                     {{ formatDate(task.dueDate) }}
                   </v-chip>
+                  <v-chip v-if="task.visibility === 'SHARED'" color="info" size="small" class="mr-2 mt-1">
+                    SHARED
+                  </v-chip>
                 </div>
                 <div class="task-actions">
                   <v-btn
@@ -250,6 +325,15 @@ onMounted(fetchTasks);
                     @click="openEditTaskDialog(task)"
                     :disabled="loading"
                     class="mt-1"
+                  ></v-btn>
+                  <v-btn
+                    icon="mdi-share-variant"
+                    variant="text"
+                    size="small"
+                    @click="openShareDialog(task.id)"
+                    :disabled="loading"
+                    class="mt-1"
+                    v-if="!task.sharedWith || task.owner"
                   ></v-btn>
                   <v-btn
                     icon="mdi-delete"
@@ -353,6 +437,55 @@ onMounted(fetchTasks);
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Share Task Dialog -->
+    <v-dialog v-model="shareDialog" max-width="500px">
+      <v-card>
+        <v-card-title>
+          <span class="text-h5">Share Task</span>
+        </v-card-title>
+
+        <v-card-text>
+          <v-container>
+            <v-row>
+              <v-col cols="12">
+                <v-select
+                  v-model="shareUsername"
+                  label="Select Friend"
+                  :items="friends"
+                  item-title="friend.username"
+                  item-value="friend.username"
+                  :disabled="loading || friends.length === 0"
+                  :hint="friends.length === 0 ? 'You have no friends to share with' : ''"
+                  persistent-hint
+                ></v-select>
+              </v-col>
+            </v-row>
+          </v-container>
+        </v-card-text>
+
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn
+            color="secondary"
+            text=""
+            @click="shareDialog = false"
+            :disabled="loading"
+          >
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            text=""
+            @click="shareTask"
+            :loading="loading"
+            :disabled="loading || !shareUsername"
+          >
+            Share
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -401,6 +534,19 @@ onMounted(fetchTasks);
   display: flex;
   align-items: center;
   margin-left: auto;
+}
+
+.shared-with-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.shared-with-title {
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.6);
+  margin-right: 8px;
+  margin-top: 4px;
 }
 
 /* Mobile-specific styles */

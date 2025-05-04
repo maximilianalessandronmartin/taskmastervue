@@ -1,6 +1,7 @@
 import apiService from './api.service';
 import { 
   type CreateTaskDto,
+  type ShareTaskDto,
   type TaskDto,
   type TaskListDto,
   type UpdateTaskDto
@@ -77,6 +78,37 @@ export const taskService = {
   deleteTask(id: string): Promise<void> {
     return apiService.delete<void>(`/tasks/delete/${id}`)
       .then(() => {});
+  },
+
+  /**
+   * Get shared tasks
+   * @returns Promise with an array of shared tasks
+   */
+  getSharedTasks(): Promise<TaskDto[]> {
+    return apiService.get<TaskDto[]>('/tasks/shared')
+      .then(response => response.data);
+  },
+
+  /**
+   * Share a task with a user
+   * @param id Task ID
+   * @param shareData Share data containing username
+   * @returns Promise with the updated task
+   */
+  shareTask(id: string, shareData: ShareTaskDto): Promise<TaskDto> {
+    return apiService.post<TaskDto>(`/tasks/${id}/share`, shareData)
+      .then(response => response.data);
+  },
+
+  /**
+   * Unshare a task with a user
+   * @param id Task ID
+   * @param username Username to unshare with
+   * @returns Promise with the updated task
+   */
+  unshareTask(id: string, username: string): Promise<TaskDto> {
+    return apiService.delete<TaskDto>(`/tasks/${id}/share/${username}`)
+      .then(response => response.data);
   }
 };
 

@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia';
 import taskService from '../services/task.service';
-import { type CreateTaskDto, type TaskDto, type UpdateTaskDto } from '../types/models';
+import { type CreateTaskDto, type ShareTaskDto, type TaskDto, type UpdateTaskDto } from '../types/models';
 import { useAuthStore } from './auth.store';
 
 interface TaskState {
   tasks: TaskDto[];
+  sharedTasks: TaskDto[];
   currentTask: TaskDto | null;
   loading: boolean;
   error: string | null;
@@ -13,6 +14,7 @@ interface TaskState {
 export const useTaskStore = defineStore('task', {
   state: (): TaskState => ({
     tasks: [],
+    sharedTasks: [],
     currentTask: null,
     loading: false,
     error: null
@@ -20,9 +22,11 @@ export const useTaskStore = defineStore('task', {
 
   getters: {
     getTasks: (state) => state.tasks,
-    getTaskById: (state) => (id: string) => state.tasks.find(task => task.id === id),
+    getSharedTasks: (state) => state.sharedTasks,
+    getTaskById: (state) => (id: string) => state.tasks.find(task => task.id === id) || state.sharedTasks.find(task => task.id === id),
     getCompletedTasks: (state) => state.tasks.filter(task => task.completed),
-    getPendingTasks: (state) => state.tasks.filter(task => !task.completed)
+    getPendingTasks: (state) => state.tasks.filter(task => !task.completed),
+    getAllTasks: (state) => [...state.tasks, ...state.sharedTasks]
   },
 
   actions: {
@@ -143,6 +147,67 @@ export const useTaskStore = defineStore('task', {
 
     clearError() {
       this.error = null;
+    },
+
+    async fetchSharedTasks() {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const tasks = await taskService.getSharedTasks();
+        this.sharedTasks = tasks;
+        return tasks;
+      } catch (error: any) {
+        this.error = error.response?.data?.message || 'Failed to fetch shared tasks';
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async shareTask(id: string, username: string) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const shareData: ShareTaskDto = { username };
+        const updatedTask = await taskService.shareTask(id, shareData);
+        const index = this.tasks.findIndex(task => task.id === id);
+        if (index !== -1) {
+          this.tasks[index] = updatedTask;
+        }
+        if (this.currentTask?.id === id) {
+          this.currentTask = updatedTask;
+        }
+        return updatedTask;
+      } catch (error: any) {
+        this.error = error.response?.data?.message || 'Failed to share task';
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async unshareTask(id: string, username: string) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const updatedTask = await taskService.unshareTask(id, username);
+        const index = this.tasks.findIndex(task => task.id === id);
+        if (index !== -1) {
+          this.tasks[index] = updatedTask;
+        }
+        if (this.currentTask?.id === id) {
+          this.currentTask = updatedTask;
+        }
+        return updatedTask;
+      } catch (error: any) {
+        this.error = error.response?.data?.message || 'Failed to unshare task';
+        throw error;
+      } finally {
+        this.loading = false;
+      }
     }
   }
 });

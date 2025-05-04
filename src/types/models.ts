@@ -59,6 +59,9 @@ export interface TaskDto {
   dueDate: string;
   urgency: 'LOW' | 'MEDIUM' | 'HIGH';
   completed: boolean;
+  visibility?: 'PRIVATE' | 'SHARED';
+  sharedWith?: UserDto[];
+  owner?: boolean;
 }
 
 export interface CreateTaskDto {
@@ -74,6 +77,10 @@ export interface UpdateTaskDto {
   dueDate?: string;
   urgency?: 'LOW' | 'MEDIUM' | 'HIGH';
   completed?: boolean;
+}
+
+export interface ShareTaskDto {
+  username: string;
 }
 
 export interface TaskListDto {
