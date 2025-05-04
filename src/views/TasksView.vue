@@ -215,7 +215,7 @@ onMounted(fetchTasks);
               <v-checkbox
                 :model-value="task.completed"
                 @change="completeTask(task.id)"
-                :disabled="task.completed || loading"
+                :disabled="loading"
                 :hide-details="true"
               ></v-checkbox>
             </template>
@@ -248,7 +248,7 @@ onMounted(fetchTasks);
                     variant="text"
                     size="small"
                     @click="openEditTaskDialog(task)"
-                    :disabled="task.completed || loading"
+                    :disabled="loading"
                     class="mt-1"
                   ></v-btn>
                   <v-btn

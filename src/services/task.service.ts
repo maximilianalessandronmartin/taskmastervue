@@ -60,7 +60,7 @@ export const taskService = {
   },
 
   /**
-   * Mark a task as complete
+   * Toggle a task's completion status
    * @param id Task ID
    * @returns Promise with the updated task
    */
