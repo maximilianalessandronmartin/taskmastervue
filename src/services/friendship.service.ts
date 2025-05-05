@@ -48,6 +48,16 @@ export const friendshipService = {
   declineFriendRequest(friendshipId: string): Promise<void> {
     return apiService.delete<void>(`/friendships/decline?friendshipId=${friendshipId}`)
       .then(() => {});
+  },
+
+  /**
+   * Remove an existing friend
+   * @param friendshipId ID of the friendship to remove
+   * @returns Promise with void
+   */
+  removeFriend(friendshipId: string): Promise<void> {
+    return apiService.delete<void>(`/friendships/decline?friendshipId=${friendshipId}`)
+      .then(() => {});
   }
 };
 

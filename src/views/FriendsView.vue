@@ -11,6 +11,8 @@ const newFriendEmail = ref('');
 const activeTab = ref(0);
 const error = ref('');
 const success = ref('');
+const confirmRemoveDialog = ref(false);
+const friendshipToRemove = ref('');
 
 // Methods
 const fetchFriends = async () => {
@@ -40,11 +42,11 @@ const sendFriendRequest = async () => {
     error.value = 'Please enter an email address';
     return;
   }
-  
+
   loading.value = true;
   error.value = '';
   success.value = '';
-  
+
   try {
     await friendshipStore.sendFriendRequest(newFriendEmail.value);
     success.value = `Friend request sent to ${newFriendEmail.value}`;
@@ -60,7 +62,7 @@ const acceptFriendRequest = async (friendshipId: string) => {
   loading.value = true;
   error.value = '';
   success.value = '';
-  
+
   try {
     await friendshipStore.acceptFriendRequest(friendshipId);
     success.value = 'Friend request accepted';
@@ -75,12 +77,33 @@ const declineFriendRequest = async (friendshipId: string) => {
   loading.value = true;
   error.value = '';
   success.value = '';
-  
+
   try {
     await friendshipStore.declineFriendRequest(friendshipId);
     success.value = 'Friend request declined';
   } catch (e: any) {
     error.value = e.response?.data?.message || 'Failed to decline friend request';
+  } finally {
+    loading.value = false;
+  }
+};
+
+const confirmRemove = (friendshipId: string) => {
+  friendshipToRemove.value = friendshipId;
+  confirmRemoveDialog.value = true;
+};
+
+const removeFriend = async (friendshipId: string) => {
+  loading.value = true;
+  error.value = '';
+  success.value = '';
+
+  try {
+    await friendshipStore.removeFriend(friendshipId);
+    success.value = 'Friend removed successfully';
+    confirmRemoveDialog.value = false; // Close the dialog after successful removal
+  } catch (e: any) {
+    error.value = e.response?.data?.message || 'Failed to remove friend';
   } finally {
     loading.value = false;
   }
@@ -123,7 +146,7 @@ onMounted(async () => {
 <template>
   <div>
     <h1 class="text-h4 mb-4">Friends</h1>
-    
+
     <!-- Add Friend Form -->
     <v-card class="mb-4">
       <v-card-title>Add a Friend</v-card-title>
@@ -134,7 +157,7 @@ onMounted(async () => {
         <v-alert v-if="success" type="success" class="mb-2">
           {{ success }}
         </v-alert>
-        
+
         <v-form @submit.prevent="sendFriendRequest">
           <v-row>
             <v-col cols="12" sm="8">
@@ -161,14 +184,14 @@ onMounted(async () => {
         </v-form>
       </v-card-text>
     </v-card>
-    
+
     <!-- Friends and Requests Tabs -->
     <v-card>
       <v-tabs v-model="activeTab" grow>
         <v-tab value="0">My Friends</v-tab>
         <v-tab value="1">Friend Requests</v-tab>
       </v-tabs>
-      
+
       <v-window v-model="activeTab">
         <!-- Friends List -->
         <v-window-item value="0">
@@ -183,23 +206,32 @@ onMounted(async () => {
                     <v-icon color="white">mdi-account</v-icon>
                   </v-avatar>
                 </template>
-                
+
                 <v-list-item-title class="text-h6">
                   {{ getFriendName(friendship) }}
                 </v-list-item-title>
-                
+
                 <v-list-item-subtitle>
                   Friends since {{ formatDate(friendship.updatedAt) }}
                 </v-list-item-subtitle>
-                
+
                 <template v-slot:append>
-                  <v-chip color="primary">
+                  <v-chip color="primary" class="mr-2">
                     XP: {{ friendship.friend.xp }}
                   </v-chip>
+                  <v-btn
+                    color="error"
+                    variant="text"
+                    icon="mdi-account-remove"
+                    @click="confirmRemove(friendship.id)"
+                    :loading="loading"
+                    :disabled="loading"
+                    title="Remove friend"
+                  ></v-btn>
                 </template>
               </v-list-item>
             </v-list>
-            
+
             <v-alert
               v-else
               type="info"
@@ -207,7 +239,7 @@ onMounted(async () => {
             ></v-alert>
           </v-card-text>
         </v-window-item>
-        
+
         <!-- Friend Requests -->
         <v-window-item value="1">
           <v-card-text>
@@ -221,15 +253,15 @@ onMounted(async () => {
                     <v-icon color="white">mdi-account-question</v-icon>
                   </v-avatar>
                 </template>
-                
+
                 <v-list-item-title class="text-h6">
                   {{ getSenderName(request) }}
                 </v-list-item-title>
-                
+
                 <v-list-item-subtitle>
                   Request received on {{ formatDate(request.createdAt) }}
                 </v-list-item-subtitle>
-                
+
                 <template v-slot:append>
                   <v-btn
                     color="success"
@@ -251,7 +283,7 @@ onMounted(async () => {
                 </template>
               </v-list-item>
             </v-list>
-            
+
             <v-alert
               v-else
               type="info"
@@ -261,5 +293,19 @@ onMounted(async () => {
         </v-window-item>
       </v-window>
     </v-card>
+    <!-- Remove Friend Confirmation Dialog -->
+    <v-dialog v-model="confirmRemoveDialog" max-width="400px">
+      <v-card>
+        <v-card-title class="text-h5">Remove Friend</v-card-title>
+        <v-card-text>
+          Are you sure you want to remove this friend? This action cannot be undone.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="secondary" @click="confirmRemoveDialog = false">Cancel</v-btn>
+          <v-btn color="error" @click="removeFriend(friendshipToRemove)" :loading="loading" :disabled="loading">Remove</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>

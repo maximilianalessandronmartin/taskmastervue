@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {ref, onMounted, computed} from 'vue';
+import {ref, onMounted, computed, watch} from 'vue';
 import {useTaskStore} from '../store/task.store';
 import {useFriendshipStore} from '../store/friendship.store';
 
@@ -21,6 +21,10 @@ const shareUsername = ref('');
 const currentTask = ref<TaskDto | null>(null);
 const friendships = ref<Friendship[]>([]);
 
+// Task details dialog
+const detailsDialog = ref(false);
+const selectedTask = ref<TaskDto | null>(null);
+
 
 // Task form data
 const taskDialog = ref(false);
@@ -37,14 +41,27 @@ const taskForm = ref<CreateTaskDto>({
 const showCompleted = ref(false);
 const searchQuery = ref('');
 const urgencyFilter = ref('ALL');
+const taskTypeFilter = ref('all'); // Filter for all/owned/shared tasks
+const filterPanelOpen = ref(1); // Controls the expansion panel state
 
 // Loading state
 const loading = ref(false);
 
 // Computed properties
 const filteredTasks = computed(() => {
-  // Combine own and shared tasks
-  let tasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
+  // Get tasks based on the selected filter
+  let tasks;
+  switch (taskTypeFilter.value) {
+    case 'owned':
+      tasks = [...taskStore.getTasks];
+      break;
+    case 'shared':
+      tasks = [...taskStore.getSharedTasks];
+      break;
+    default: // 'all'
+      tasks = [...taskStore.getAllTasks];
+      break;
+  }
 
   // Filter by completion status
   if (!showCompleted.value) {
@@ -77,8 +94,12 @@ const filteredTasks = computed(() => {
 const fetchTasks = async () => {
   loading.value = true;
   try {
-    await taskStore.fetchAllTasks();
-    await taskStore.fetchSharedTasks();
+    if (taskTypeFilter.value === 'shared') {
+      await taskStore.fetchSharedTasks();
+    } else {
+      // For 'owned' or 'all', use fetchAllTasks with appropriate type
+      await taskStore.fetchAllTasks(taskTypeFilter.value === 'all' ? undefined : taskTypeFilter.value);
+    }
   } catch (error) {
     console.error('Failed to fetch tasks:', error);
   } finally {
@@ -112,10 +133,19 @@ const openCreateTaskDialog = () => {
 const openEditTaskDialog = (task: TaskDto) => {
   isEditMode.value = true;
   currentTaskId.value = task.id;
+
+  // Format the date for datetime-local input if it exists
+  let formattedDueDate = '';
+  if (task.dueDate) {
+    // Create a date object and format it to YYYY-MM-DDThh:mm
+    const date = new Date(task.dueDate);
+    formattedDueDate = date.toISOString().slice(0, 16); // Format as YYYY-MM-DDThh:mm
+  }
+
   taskForm.value = {
     name: task.name,
     description: task.description,
-    dueDate: task.dueDate,
+    dueDate: formattedDueDate,
     urgency: task.urgency
   };
   taskDialog.value = true;
@@ -195,6 +225,11 @@ const openShareDialog = (task: TaskDto) => {
   shareDialog.value = true;
 };
 
+const openTaskDetailsDialog = (task: TaskDto) => {
+  selectedTask.value = task;
+  detailsDialog.value = true;
+};
+
 const shareTask = async () => {
   // Überprüfen Sie, ob shareUsername.value einen Wert hat
   if (!shareUsername.value || !shareTaskId.value) {
@@ -244,136 +279,172 @@ const unshareTask = async (taskId: string, username: string) => {
   }
 };
 
+// Watch for changes in the task type filter
+watch(taskTypeFilter, (newValue) => {
+  fetchTasks();
+});
+
 // Lifecycle hooks
-onMounted(fetchTasks);
+onMounted(() => {
+  // Initialize with the default filter (all)
+  taskTypeFilter.value = 'all';
+  fetchTasks();
+});
 </script>
 
 <template>
   <div>
-    <h1 class="text-h4 mb-4">Tasks</h1>
+    <!-- Task Type Selector -->
+    <v-btn-toggle
+      v-model="taskTypeFilter"
+      color="primary"
+      mandatory
+      class="mb-4 task-type-toggle"
+    >
+      <v-btn value="all">
+        All Tasks
+      </v-btn>
+      <v-btn value="owned">
+        My Tasks
+      </v-btn>
+      <v-btn value="shared">
+        For Me
+      </v-btn>
+    </v-btn-toggle>
 
-    <!-- Filters -->
-    <v-card class="mb-4">
-      <v-card-text>
-        <v-row>
-          <v-col cols="12" sm="4">
-            <v-text-field
-                v-model="searchQuery"
-                :hide-details="'auto'"
-                clearable
-                label="Search tasks"
-                prepend-icon="mdi-magnify"
-            ></v-text-field>
-          </v-col>
-          <v-col cols="12" sm="4">
-            <v-select
-                v-model="urgencyFilter"
-                :hide-details="true"
-                :items="[
-                { title: 'All', value: 'ALL' },
-                { title: 'Low', value: 'LOW' },
-                { title: 'Medium', value: 'MEDIUM' },
-                { title: 'High', value: 'HIGH' }
-              ]"
-                item-title="title"
-                item-value="value"
-                label="Filter by urgency"
-            ></v-select>
-          </v-col>
-          <v-col cols="12" sm="4">
-            <v-switch
+    <!-- Search Field - Always visible -->
+    <v-text-field
+        v-model="searchQuery"
+        :hide-details="'auto'"
+        clearable
+        label="Search tasks"
+        variant="outlined"
+        class="mb-4"
+    >
+      <template v-slot:prepend-inner>
+        <v-icon>mdi-magnify</v-icon>
+      </template>
+    </v-text-field>
+
+    <!-- Filters - Collapsible -->
+    <v-expansion-panels v-model="filterPanelOpen" class="mb-4">
+      <v-expansion-panel>
+        <v-expansion-panel-title>
+          <div class="d-flex align-center">
+            <v-icon class="mr-2">mdi-filter</v-icon>
+            <span>Additional Filters</span>
+          </div>
+        </v-expansion-panel-title>
+        <v-expansion-panel-text>
+          <v-row>
+            <v-col cols="12">
+              <v-select
+                  v-model="urgencyFilter"
+                  :hide-details="true"
+                  :items="[
+                  { title: 'All', value: 'ALL' },
+                  { title: 'Low', value: 'LOW' },
+                  { title: 'Medium', value: 'MEDIUM' },
+                  { title: 'High', value: 'HIGH' }
+                ]"
+                  item-title="title"
+                  item-value="value"
+                  label="Filter by urgency"
+                  variant="outlined"
+              ></v-select>
+            </v-col>
+          </v-row>
+          <v-row>
+            <v-col cols="12">
+              <v-switch
                 v-model="showCompleted"
+                :color="showCompleted ? 'success' : 'grey'"
                 :hide-details="true"
-                label="Show completed tasks"
-            ></v-switch>
-          </v-col>
-        </v-row>
-      </v-card-text>
-    </v-card>
+                class="mt-2"
+                density="comfortable"
+                label="completed"
+              ></v-switch>
+            </v-col>
+          </v-row>
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
 
     <!-- Task List -->
-    <v-card>
-      <v-card-text>
-        <v-list v-if="filteredTasks.length > 0">
-          <v-list-item
-              v-for="task in filteredTasks"
-              :key="task.id"
-              :class="{ 'completed-task': task.completed }"
-          >
+    <v-list v-if="filteredTasks.length > 0" class="task-list">
+      <v-list-item
+          v-for="task in filteredTasks"
+          :key="task.id"
+          :class="{ 'completed-task': task.completed }"
+          class="task-item"
+          @click="openTaskDetailsDialog(task)"
+      >
             <template v-slot:prepend>
               <v-checkbox
                   :disabled="loading"
                   :hide-details="true"
                   :model-value="task.completed"
                   @change="completeTask(task.id)"
+                  @click.stop
               ></v-checkbox>
             </template>
 
             <div class="task-content">
-              <v-list-item-title :class="{ 'text-decoration-line-through': task.completed }" class="task-title">
-                {{ task.name }}
-              </v-list-item-title>
+              <div class="d-flex align-center justify-space-between">
+                <v-list-item-title :class="{ 'text-decoration-line-through': task.completed }" class="task-title text-truncate">
+                  {{ task.name }}
+                </v-list-item-title>
 
-              <v-list-item-subtitle class="task-description">
-                {{ task.description }}
-              </v-list-item-subtitle>
-
-
-              <div class="task-metadata">
-                <div class="task-info">
-                  <v-chip
-                      :color="getUrgencyColor(task.urgency)"
-                      class="mr-2 mt-1"
-                      size="small"
-                  >
-                    {{ task.urgency }}
-                  </v-chip>
-                  <v-chip class="mr-2 mt-1" size="small">
-                    {{ formatDate(task.dueDate) }}
-                  </v-chip>
-                  <v-chip v-if="task.visibility === 'SHARED'" class="mr-2 mt-1" color="info" size="small">
-                    SHARED
-                  </v-chip>
-                </div>
                 <div class="task-actions">
                   <v-btn
                       :disabled="loading"
-                      class="mt-1"
                       icon="mdi-pencil"
                       size="small"
                       variant="text"
-                      @click="openEditTaskDialog(task)"
+                      @click.stop="openEditTaskDialog(task)"
                   ></v-btn>
                   <v-btn
                       v-if="!task.sharedWith || task.owner"
                       :disabled="loading"
-                      class="mt-1"
                       icon="mdi-share-variant"
                       size="small"
                       variant="text"
-                      @click="openShareDialog(task)"
+                      @click.stop="openShareDialog(task)"
                   ></v-btn>
                   <v-btn
                       :disabled="loading"
-                      class="mt-1"
                       icon="mdi-delete"
                       size="small"
                       variant="text"
-                      @click="deleteTask(task.id)"
+                      @click.stop="deleteTask(task.id)"
                   ></v-btn>
                 </div>
               </div>
+
+              <div class="task-info">
+                <v-chip
+                    :color="getUrgencyColor(task.urgency)"
+                    class="mr-2"
+                    size="x-small"
+                >
+                  {{ task.urgency }}
+                </v-chip>
+                <v-chip class="mr-2" size="x-small">
+                  {{ formatDate(task.dueDate) }}
+                </v-chip>
+                <v-chip v-if="task.visibility === 'SHARED'" class="mr-2" :color="task.owner ? 'primary' : 'info'" size="x-small">
+                  {{ task.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
+                </v-chip>
+              </div>
             </div>
           </v-list-item>
-        </v-list>
+    </v-list>
 
-        <v-alert
-            v-else
-            text="No tasks found. Create a new task to get started!"
-            type="info"
-        ></v-alert>
-      </v-card-text>
-    </v-card>
+    <v-alert
+        v-else
+        text="No tasks found. Create a new task to get started!"
+        type="info"
+    ></v-alert>
 
     <!-- Add Task FAB -->
     <v-btn
@@ -460,7 +531,7 @@ onMounted(fetchTasks);
     <v-dialog v-model="shareDialog" max-width="500px">
       <v-card>
         <v-card-title>
-          <span class="text-h5">Share Task</span>
+          <span class="text-h5">{{ currentTask && currentTask.owner ? 'Share Task' : 'Task Shared With Me' }}</span>
         </v-card-title>
 
         <v-card-text>
@@ -472,9 +543,8 @@ onMounted(fetchTasks);
                     :disabled="loading || friendships.length === 0"
                     :hint="friendships.length === 0 ? 'You have no friends to share with' : ''"
                     :items="friendships"
-                    item-title="friend.firstname"
-
-                    item-value="friend.username"
+                    :item-title="item => item.friend?.firstname + ' ' + item.friend?.lastname"
+                    :item-value="item => item.friend?.username"
                     label="Select Friend"
                     persistent-hint
                 >
@@ -488,7 +558,7 @@ onMounted(fetchTasks);
                       <div>{{ item.raw.friend.firstname }}</div>
                       <small>{{ item.raw.friend.username }}</small>
                     </div>
-                    <div v-else>Ungültiger Benutzer</div>
+                    <div v-else>Choose a friend to share</div>
                   </template>
                 </v-select>
               </v-col>
@@ -498,7 +568,7 @@ onMounted(fetchTasks);
             <v-row v-if="currentTask && currentTask.sharedWith && currentTask.sharedWith.length > 0">
               <v-col cols="12">
                 <v-divider class="my-3"></v-divider>
-                <h3 class="text-subtitle-1 mb-2">Currently shared with:</h3>
+                <h3 class="text-subtitle-1 mb-2">{{ currentTask && currentTask.owner ? 'Currently shared with:' : 'Shared by:' }}</h3>
                 <div class="shared-with-list">
                   <v-chip
                       v-for="user in currentTask.sharedWith"
@@ -539,6 +609,87 @@ onMounted(fetchTasks);
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Task Details Dialog -->
+    <v-dialog v-model="detailsDialog" max-width="500px">
+      <v-card v-if="selectedTask">
+        <v-card-title>
+          <span class="text-h5" :class="{ 'text-decoration-line-through': selectedTask.completed }">
+            {{ selectedTask.name }}
+          </span>
+        </v-card-title>
+
+        <v-card-text>
+          <v-container>
+            <v-row>
+              <v-col cols="12">
+                <div class="d-flex align-center mb-2">
+                  <v-chip :color="getUrgencyColor(selectedTask.urgency)" class="mr-2">
+                    {{ selectedTask.urgency }}
+                  </v-chip>
+                  <v-chip class="mr-2">
+                    {{ formatDate(selectedTask.dueDate) }}
+                  </v-chip>
+                  <v-chip v-if="selectedTask.visibility === 'SHARED'" :color="selectedTask.owner ? 'primary' : 'info'">
+                    {{ selectedTask.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
+                  </v-chip>
+                </div>
+              </v-col>
+            </v-row>
+
+            <v-row v-if="selectedTask.description">
+              <v-col cols="12">
+                <div class="text-subtitle-1 font-weight-bold mb-1">Description:</div>
+                <div class="task-details-description">{{ selectedTask.description }}</div>
+              </v-col>
+            </v-row>
+
+            <v-row v-if="selectedTask.sharedWith && selectedTask.sharedWith.length > 0">
+              <v-col cols="12">
+                <v-divider class="my-3"></v-divider>
+                <div class="text-subtitle-1 font-weight-bold mb-1">{{ selectedTask.owner ? 'Shared with:' : 'Shared by:' }}</div>
+                <div class="shared-with-list">
+                  <v-chip
+                      v-for="user in selectedTask.sharedWith"
+                      :key="user.id"
+                      class="mr-1 mt-1"
+                      size="small"
+                  >
+                    {{ user.firstname }} {{ user.lastname }}
+                  </v-chip>
+                </div>
+              </v-col>
+            </v-row>
+          </v-container>
+        </v-card-text>
+
+        <v-card-actions>
+          <v-checkbox
+              :model-value="selectedTask.completed"
+              :disabled="loading"
+              label="Completed"
+              @change="completeTask(selectedTask.id)"
+          ></v-checkbox>
+          <v-spacer></v-spacer>
+          <v-btn
+              :disabled="loading"
+              color="secondary"
+              text=""
+              @click="detailsDialog = false"
+          >
+            Close
+          </v-btn>
+          <v-btn
+              :disabled="loading"
+              color="primary"
+              text=""
+              @click="openEditTaskDialog(selectedTask); detailsDialog = false"
+          >
+            Edit
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -557,17 +708,21 @@ onMounted(fetchTasks);
   width: 100%;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 4px 0;
 }
 
 .task-title {
   font-weight: bold;
   margin-bottom: 0;
-  word-break: break-word;
+  max-width: 70%;
 }
 
 .task-description {
   margin-bottom: 8px;
   word-break: break-word;
+  display: none; /* Hide description in the list view */
 }
 
 .task-metadata {
@@ -581,6 +736,7 @@ onMounted(fetchTasks);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  margin-top: 4px;
 }
 
 .task-actions {
@@ -602,8 +758,78 @@ onMounted(fetchTasks);
   margin-top: 4px;
 }
 
+/* Task list styling for visual separation */
+.task-list {
+  padding: 8px;
+  background: transparent;
+}
+
+.task-item {
+  margin-bottom: 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s ease;
+  background-color: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  position: relative;
+  height: 72px !important; /* Fixed height for all task items */
+  cursor: pointer;
+}
+
+.task-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+.task-item:last-child {
+  margin-bottom: 0;
+}
+
+.task-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: rgb(var(--v-theme-primary), #1976d2);
+  opacity: 0.7;
+}
+
+.task-item.completed-task::before {
+  background-color: rgb(var(--v-theme-success), #4caf50);
+}
+
+/* Task details dialog styles */
+.task-details-description {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Task type toggle styles */
+.task-type-toggle {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.task-type-toggle .v-btn {
+  flex: 1;
+}
+
 /* Mobile-specific styles */
 @media (max-width: 600px) {
+  .task-item {
+    margin-bottom: 8px;
+  }
 
+  .task-type-toggle {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .task-type-toggle .v-btn {
+    min-width: 120px;
+
+  }
 }
 </style>

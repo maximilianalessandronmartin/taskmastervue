@@ -11,6 +11,25 @@ interface TaskState {
   error: string | null;
 }
 
+// Helper function to handle API calls with loading and error states
+async function handleApiCall<T>(
+  storeInstance: any,
+  apiCall: () => Promise<T>
+): Promise<T> {
+  storeInstance.loading = true;
+  storeInstance.error = null;
+
+  try {
+    const result = await apiCall();
+    return result;
+  } catch (error: any) {
+    storeInstance.error = error.response?.data?.message || 'An error occurred';
+    throw error;
+  } finally {
+    storeInstance.loading = false;
+  }
+}
+
 export const useTaskStore = defineStore('task', {
   state: (): TaskState => ({
     tasks: [],
@@ -26,63 +45,41 @@ export const useTaskStore = defineStore('task', {
     getTaskById: (state) => (id: string) => state.tasks.find(task => task.id === id) || state.sharedTasks.find(task => task.id === id),
     getCompletedTasks: (state) => state.tasks.filter(task => task.completed),
     getPendingTasks: (state) => state.tasks.filter(task => !task.completed),
-    getAllTasks: (state) => [...state.tasks, ...state.sharedTasks]
+    // This getter is redundant with getTasks, but keeping for backward compatibility
+    getAllTasks: (state) => [...state.tasks]
   },
 
   actions: {
-    async fetchAllTasks() {
-      this.loading = true;
-      this.error = null;
-
-      try {
-        const tasks = await taskService.getAllTasks();
+    async fetchAllTasks(type?: string) {
+      return handleApiCall(this, async () => {
+        const tasks = await taskService.getAllTasks(type);
         this.tasks = tasks;
         return tasks;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to fetch tasks';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
+    },
+
+    async fetchOwnedTasks() {
+      return this.fetchAllTasks('owned');
     },
 
     async fetchTaskById(id: string) {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         const task = await taskService.getTaskById(id);
         this.currentTask = task;
         return task;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to fetch task';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
     async createTask(taskData: CreateTaskDto) {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         const task = await taskService.createTask(taskData);
         this.tasks.push(task);
         return task;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to create task';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
     async updateTask(id: string, taskData: UpdateTaskDto) {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         const updatedTask = await taskService.updateTask(id, taskData);
         const index = this.tasks.findIndex(task => task.id === id);
         if (index !== -1) {
@@ -92,19 +89,11 @@ export const useTaskStore = defineStore('task', {
           this.currentTask = updatedTask;
         }
         return updatedTask;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to update task';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
     async completeTask(id: string) {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         const updatedTask = await taskService.completeTask(id);
         const index = this.tasks.findIndex(task => task.id === id);
         if (index !== -1) {
@@ -119,30 +108,17 @@ export const useTaskStore = defineStore('task', {
         await authStore.fetchUser();
 
         return updatedTask;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to complete task';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
     async deleteTask(id: string) {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         await taskService.deleteTask(id);
         this.tasks = this.tasks.filter(task => task.id !== id);
         if (this.currentTask?.id === id) {
           this.currentTask = null;
         }
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to delete task';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
     clearError() {
@@ -150,26 +126,15 @@ export const useTaskStore = defineStore('task', {
     },
 
     async fetchSharedTasks() {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         const tasks = await taskService.getSharedTasks();
         this.sharedTasks = tasks;
         return tasks;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to fetch shared tasks';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
     async shareTask(id: string, username: string) {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         const shareData: ShareTaskDto = { username };
         const updatedTask = await taskService.shareTask(id, shareData);
         const index = this.tasks.findIndex(task => task.id === id);
@@ -180,19 +145,11 @@ export const useTaskStore = defineStore('task', {
           this.currentTask = updatedTask;
         }
         return updatedTask;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to share task';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
 
     async unshareTask(id: string, username: string) {
-      this.loading = true;
-      this.error = null;
-
-      try {
+      return handleApiCall(this, async () => {
         const updatedTask = await taskService.unshareTask(id, username);
         const index = this.tasks.findIndex(task => task.id === id);
         if (index !== -1) {
@@ -202,12 +159,7 @@ export const useTaskStore = defineStore('task', {
           this.currentTask = updatedTask;
         }
         return updatedTask;
-      } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to unshare task';
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      });
     }
   }
 });

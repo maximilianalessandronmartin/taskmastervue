@@ -16,17 +16,17 @@ export const useFriendshipStore = defineStore('friendship', {
     loading: false,
     error: null
   }),
-  
+
   getters: {
     getFriends: (state) => state.friends,
     getPendingRequests: (state) => state.pendingRequests
   },
-  
+
   actions: {
     async fetchFriends() {
       this.loading = true;
       this.error = null;
-      
+
       try {
         const friends = await friendshipService.getFriends();
         this.friends = friends;
@@ -38,11 +38,11 @@ export const useFriendshipStore = defineStore('friendship', {
         this.loading = false;
       }
     },
-    
+
     async fetchPendingRequests() {
       this.loading = true;
       this.error = null;
-      
+
       try {
         const pendingRequests = await friendshipService.getPendingRequests();
         this.pendingRequests = pendingRequests;
@@ -54,11 +54,11 @@ export const useFriendshipStore = defineStore('friendship', {
         this.loading = false;
       }
     },
-    
+
     async sendFriendRequest(receiverMail: string) {
       this.loading = true;
       this.error = null;
-      
+
       try {
         await friendshipService.sendFriendRequest(receiverMail);
         // Refresh pending requests after sending a new request
@@ -70,11 +70,11 @@ export const useFriendshipStore = defineStore('friendship', {
         this.loading = false;
       }
     },
-    
+
     async acceptFriendRequest(friendshipId: string) {
       this.loading = true;
       this.error = null;
-      
+
       try {
         await friendshipService.acceptFriendRequest(friendshipId);
         // Refresh both friends and pending requests after accepting
@@ -89,11 +89,11 @@ export const useFriendshipStore = defineStore('friendship', {
         this.loading = false;
       }
     },
-    
+
     async declineFriendRequest(friendshipId: string) {
       this.loading = true;
       this.error = null;
-      
+
       try {
         await friendshipService.declineFriendRequest(friendshipId);
         // Remove the declined request from pending requests
@@ -107,7 +107,25 @@ export const useFriendshipStore = defineStore('friendship', {
         this.loading = false;
       }
     },
-    
+
+    async removeFriend(friendshipId: string) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        await friendshipService.removeFriend(friendshipId);
+        // Remove the friend from friends list
+        this.friends = this.friends.filter(
+          friend => friend.id !== friendshipId
+        );
+      } catch (error: any) {
+        this.error = error.response?.data?.message || 'Failed to remove friend';
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
     clearError() {
       this.error = null;
     }

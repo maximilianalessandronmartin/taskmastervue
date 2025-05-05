@@ -104,7 +104,7 @@ const resetAccount = async () => {
         <div v-if="authStore.user" class="mb-4">
           <h3 class="text-h6">User Information</h3>
           <p><strong>Name:</strong> {{ authStore.user.firstname }} {{ authStore.user.lastname }}</p>
-          <p><strong>Username:</strong> {{ authStore.user.username }}</p>
+          <p><strong>E-Mail:</strong> {{ authStore.user.username }}</p>
           <p><strong>XP:</strong> {{ authStore.user.xp }}</p>
         </div>
       </v-card-text>

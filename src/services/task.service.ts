@@ -9,12 +9,22 @@ import {
 
 export const taskService = {
   /**
-   * Get all tasks for the authenticated user
+   * Get tasks for the authenticated user with optional type filter
+   * @param type Optional filter: 'all', 'owned', or 'shared'
    * @returns Promise with an array of tasks
    */
-  getAllTasks(): Promise<TaskDto[]> {
-    return apiService.get<TaskDto[]>('/tasks')
+  getAllTasks(type?: string): Promise<TaskDto[]> {
+    const url = type ? `/tasks?type=${type}` : '/tasks';
+    return apiService.get<TaskDto[]>(url)
       .then(response => response.data);
+  },
+
+  /**
+   * Get owned tasks for the authenticated user
+   * @returns Promise with an array of owned tasks
+   */
+  getOwnedTasks(): Promise<TaskDto[]> {
+    return this.getAllTasks('owned');
   },
 
   /**
@@ -85,8 +95,7 @@ export const taskService = {
    * @returns Promise with an array of shared tasks
    */
   getSharedTasks(): Promise<TaskDto[]> {
-    return apiService.get<TaskDto[]>('/tasks/shared')
-      .then(response => response.data);
+    return this.getAllTasks('shared');
   },
 
   /**
