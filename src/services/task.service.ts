@@ -4,6 +4,7 @@ import {
   type ShareTaskDto,
   type TaskDto,
   type TaskListDto,
+  type TimerUpdateDto,
   type UpdateTaskDto
 } from '../types/models';
 
@@ -117,6 +118,47 @@ export const taskService = {
    */
   unshareTask(id: string, username: string): Promise<TaskDto> {
     return apiService.delete<TaskDto>(`/tasks/${id}/share/${username}`)
+      .then(response => response.data);
+  },
+
+  /**
+   * Update the timer for a task
+   * @param id Task ID
+   * @param timerData Timer update data
+   * @returns Promise with the updated task
+   */
+  updateTimer(id: string, timerData: TimerUpdateDto): Promise<TaskDto> {
+    return apiService.post<TaskDto>(`/tasks/${id}/timer/update`, timerData)
+      .then(response => response.data);
+  },
+
+  /**
+   * Start the timer for a task
+   * @param id Task ID
+   * @returns Promise with the updated task
+   */
+  startTimer(id: string): Promise<TaskDto> {
+    return apiService.post<TaskDto>(`/tasks/${id}/timer/start`)
+      .then(response => response.data);
+  },
+
+  /**
+   * Pause the timer for a task
+   * @param id Task ID
+   * @returns Promise with the updated task
+   */
+  pauseTimer(id: string): Promise<TaskDto> {
+    return apiService.post<TaskDto>(`/tasks/${id}/timer/pause`)
+      .then(response => response.data);
+  },
+
+  /**
+   * Reset the timer for a task
+   * @param id Task ID
+   * @returns Promise with the updated task
+   */
+  resetTimer(id: string): Promise<TaskDto> {
+    return apiService.post<TaskDto>(`/tasks/${id}/timer/reset`)
       .then(response => response.data);
   }
 };

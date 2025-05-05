@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import taskService from '../services/task.service';
-import { type CreateTaskDto, type ShareTaskDto, type TaskDto, type UpdateTaskDto } from '../types/models';
+import { type CreateTaskDto, type ShareTaskDto, type TaskDto, type TimerUpdateDto, type UpdateTaskDto } from '../types/models';
 import { useAuthStore } from './auth.store';
 
 interface TaskState {
@@ -160,6 +160,58 @@ export const useTaskStore = defineStore('task', {
         }
         return updatedTask;
       });
+    },
+
+    async updateTimer(id: string, timerData: TimerUpdateDto) {
+      return handleApiCall(this, async () => {
+        const updatedTask = await taskService.updateTimer(id, timerData);
+        this.updateTaskInStore(id, updatedTask);
+        return updatedTask;
+      });
+    },
+
+    async startTimer(id: string) {
+      return handleApiCall(this, async () => {
+        const updatedTask = await taskService.startTimer(id);
+        this.updateTaskInStore(id, updatedTask);
+        return updatedTask;
+      });
+    },
+
+    async pauseTimer(id: string) {
+      return handleApiCall(this, async () => {
+        const updatedTask = await taskService.pauseTimer(id);
+        this.updateTaskInStore(id, updatedTask);
+        return updatedTask;
+      });
+    },
+
+    async resetTimer(id: string) {
+      return handleApiCall(this, async () => {
+        const updatedTask = await taskService.resetTimer(id);
+        this.updateTaskInStore(id, updatedTask);
+        return updatedTask;
+      });
+    },
+
+    // Helper method to update a task in all relevant places in the store
+    updateTaskInStore(id: string, updatedTask: TaskDto) {
+      // Update in tasks array
+      const taskIndex = this.tasks.findIndex(task => task.id === id);
+      if (taskIndex !== -1) {
+        this.tasks[taskIndex] = updatedTask;
+      }
+
+      // Update in sharedTasks array
+      const sharedTaskIndex = this.sharedTasks.findIndex(task => task.id === id);
+      if (sharedTaskIndex !== -1) {
+        this.sharedTasks[sharedTaskIndex] = updatedTask;
+      }
+
+      // Update currentTask if it's the same task
+      if (this.currentTask?.id === id) {
+        this.currentTask = updatedTask;
+      }
     }
   }
 });

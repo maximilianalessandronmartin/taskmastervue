@@ -63,6 +63,10 @@ export interface TaskDto {
   visibility?: 'PRIVATE' | 'SHARED';
   sharedWith?: UserDto[];
   owner?: boolean;
+  pomodoroTimeSeconds?: number;
+  remainingTimeSeconds?: number;
+  lastTimerUpdateTimestamp?: string;
+  timerActive?: boolean;
 }
 
 export interface CreateTaskDto {
@@ -82,6 +86,11 @@ export interface UpdateTaskDto {
 
 export interface ShareTaskDto {
   username: string;
+}
+
+export interface TimerUpdateDto {
+  remainingTimeSeconds: number;
+  timerActive: boolean;
 }
 
 export interface TaskListDto {

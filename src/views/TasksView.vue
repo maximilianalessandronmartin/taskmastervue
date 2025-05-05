@@ -23,6 +23,12 @@ const friendships = ref<Friendship[]>([]);
 // Task details dialog
 const detailsDialog = ref(false);
 const selectedTask = ref<TaskDto | null>(null);
+const activeTab = ref('details'); // Default to details tab
+
+// Pomodoro timer
+const pomodoroMinutes = ref(25); // Default 25 minutes
+const timerCountdown = ref(0);
+const timerInterval = ref<number | null>(null);
 
 
 // Task form data
@@ -233,6 +239,14 @@ const formatTime = (dateString: string) => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+// Format seconds to MM:SS display
+const formatTimeDisplay = (seconds: number) => {
+  if (seconds <= 0) return '00:00';
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
 const getUrgencyColor = (urgency: string) => {
   switch (urgency) {
     case 'HIGH':
@@ -257,6 +271,128 @@ const openShareDialog = (task: TaskDto) => {
 const openTaskDetailsDialog = (task: TaskDto) => {
   selectedTask.value = task;
   detailsDialog.value = true;
+
+  // Initialize timer countdown if task has pomodoro time
+  if (task.pomodoroTimeSeconds) {
+    timerCountdown.value = task.remainingTimeSeconds || task.pomodoroTimeSeconds;
+    pomodoroMinutes.value = Math.floor(task.pomodoroTimeSeconds / 60);
+  } else {
+    timerCountdown.value = 0;
+  }
+
+  // Start timer interval if timer is active
+  if (task.timerActive) {
+    startTimerInterval();
+  }
+};
+
+// Timer methods
+const updatePomodoroTime = async () => {
+  if (!selectedTask.value || !pomodoroMinutes.value) return;
+
+  const seconds = Math.max(1, Math.min(60, pomodoroMinutes.value)) * 60;
+
+  try {
+    loading.value = true;
+    const timerData: TimerUpdateDto = {
+      remainingTimeSeconds: seconds,
+      timerActive: false
+    };
+
+    await taskStore.updateTimer(selectedTask.value.id, timerData);
+    timerCountdown.value = seconds;
+  } catch (error) {
+    console.error('Failed to update pomodoro time:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const startTimer = async (taskId: string) => {
+  try {
+    loading.value = true;
+    const updatedTask = await taskStore.startTimer(taskId);
+    if (selectedTask.value && selectedTask.value.id === taskId) {
+      selectedTask.value = updatedTask;
+    }
+    startTimerInterval();
+  } catch (error) {
+    console.error('Failed to start timer:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const pauseTimer = async (taskId: string) => {
+  try {
+    loading.value = true;
+    const updatedTask = await taskStore.pauseTimer(taskId);
+    if (selectedTask.value && selectedTask.value.id === taskId) {
+      selectedTask.value = updatedTask;
+    }
+    stopTimerInterval();
+  } catch (error) {
+    console.error('Failed to pause timer:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const resetTimer = async (taskId: string) => {
+  try {
+    loading.value = true;
+    const updatedTask = await taskStore.resetTimer(taskId);
+    if (selectedTask.value && selectedTask.value.id === taskId) {
+      selectedTask.value = updatedTask;
+
+      // Reset the countdown to the full pomodoro time
+      if (selectedTask.value.pomodoroTimeSeconds) {
+        timerCountdown.value = selectedTask.value.pomodoroTimeSeconds;
+      }
+    }
+    stopTimerInterval();
+  } catch (error) {
+    console.error('Failed to reset timer:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const startTimerInterval = () => {
+  // Clear any existing interval
+  stopTimerInterval();
+
+  // Start a new interval that decrements the countdown every second
+  timerInterval.value = window.setInterval(() => {
+    if (timerCountdown.value > 0) {
+      timerCountdown.value--;
+
+      // Update the server every 10 seconds to keep track of remaining time
+      if (timerCountdown.value % 10 === 0 && selectedTask.value) {
+        taskStore.updateTimer(selectedTask.value.id, {
+          remainingTimeSeconds: timerCountdown.value,
+          timerActive: true
+        }).catch(error => {
+          console.error('Failed to update timer:', error);
+        });
+      }
+    } else {
+      // Timer reached zero
+      stopTimerInterval();
+      if (selectedTask.value) {
+        taskStore.pauseTimer(selectedTask.value.id).catch(error => {
+          console.error('Failed to pause timer at completion:', error);
+        });
+      }
+    }
+  }, 1000);
+};
+
+const stopTimerInterval = () => {
+  if (timerInterval.value !== null) {
+    clearInterval(timerInterval.value);
+    timerInterval.value = null;
+  }
 };
 
 const shareTask = async () => {
@@ -311,6 +447,13 @@ const unshareTask = async (taskId: string, username: string) => {
 // Watch for changes in the task type filter
 watch(taskTypeFilter, (_) => {
   fetchTasks();
+});
+
+// Watch for dialog close to clean up timer interval
+watch(detailsDialog, (isOpen) => {
+  if (!isOpen) {
+    stopTimerInterval();
+  }
 });
 
 // Lifecycle hooks
@@ -688,51 +831,129 @@ onMounted(() => {
           </span>
         </v-card-title>
 
+        <!-- Tabs for Details and Timer -->
+        <v-tabs v-model="activeTab" color="primary" align-tabs="center">
+          <v-tab value="details">
+            <v-icon start>mdi-information-outline</v-icon>
+            Details
+          </v-tab>
+          <v-tab value="timer">
+            <v-icon start>mdi-timer-outline</v-icon>
+            Pomodoro Timer
+          </v-tab>
+        </v-tabs>
+
         <v-card-text>
-          <v-container>
-            <v-row>
-              <v-col cols="12">
-                <div class="d-flex align-center flex-wrap mb-2">
-                  <v-chip :color="getUrgencyColor(selectedTask.urgency)" class="mr-2 mb-1">
-                    {{ selectedTask.urgency }}
-                  </v-chip>
-                  <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
-                    {{ formatDate(selectedTask.dueDate) }}
-                  </v-chip>
-                  <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
-                    {{ formatTime(selectedTask.dueDate) }}
-                  </v-chip>
-                  <v-chip v-if="selectedTask.visibility === 'SHARED'" :color="selectedTask.owner ? 'primary' : 'info'" class="mb-1">
-                    {{ selectedTask.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
-                  </v-chip>
+          <v-window v-model="activeTab">
+            <!-- Details Tab -->
+            <v-window-item value="details">
+              <v-container>
+                <v-row>
+                  <v-col cols="12">
+                    <div class="d-flex align-center flex-wrap mb-2">
+                      <v-chip :color="getUrgencyColor(selectedTask.urgency)" class="mr-2 mb-1">
+                        {{ selectedTask.urgency }}
+                      </v-chip>
+                      <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
+                        {{ formatDate(selectedTask.dueDate) }}
+                      </v-chip>
+                      <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
+                        {{ formatTime(selectedTask.dueDate) }}
+                      </v-chip>
+                      <v-chip v-if="selectedTask.visibility === 'SHARED'" :color="selectedTask.owner ? 'primary' : 'info'" class="mb-1">
+                        {{ selectedTask.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
+                      </v-chip>
+                    </div>
+                  </v-col>
+                </v-row>
+
+                <v-row v-if="selectedTask.description">
+                  <v-col cols="12">
+                    <div class="text-subtitle-1 font-weight-bold mb-1">Description:</div>
+                    <div class="task-details-description">{{ selectedTask.description }}</div>
+                  </v-col>
+                </v-row>
+
+                <v-row v-if="selectedTask.sharedWith && selectedTask.sharedWith.length > 0">
+                  <v-col cols="12">
+                    <v-divider class="my-3"></v-divider>
+                    <div class="text-subtitle-1 font-weight-bold mb-1">{{ selectedTask.owner ? 'Shared with:' : 'Shared by:' }}</div>
+                    <div class="shared-with-list">
+                      <v-chip
+                          v-for="user in selectedTask.sharedWith"
+                          :key="user.id"
+                          class="mr-1 mt-1"
+                          size="small"
+                      >
+                        {{ user.firstname }} {{ user.lastname }}
+                      </v-chip>
+                    </div>
+                  </v-col>
+                </v-row>
+              </v-container>
+            </v-window-item>
+
+            <!-- Timer Tab -->
+            <v-window-item value="timer">
+              <v-container>
+                <!-- Timer Display -->
+                <div class="timer-display text-center mb-4">
+                  <div class="timer-countdown">{{ formatTimeDisplay(timerCountdown) }}</div>
+                  <div v-if="selectedTask.timerActive" class="timer-status">Timer is running</div>
+                  <div v-else class="timer-status">Timer is paused</div>
                 </div>
-              </v-col>
-            </v-row>
 
-            <v-row v-if="selectedTask.description">
-              <v-col cols="12">
-                <div class="text-subtitle-1 font-weight-bold mb-1">Description:</div>
-                <div class="task-details-description">{{ selectedTask.description }}</div>
-              </v-col>
-            </v-row>
-
-            <v-row v-if="selectedTask.sharedWith && selectedTask.sharedWith.length > 0">
-              <v-col cols="12">
-                <v-divider class="my-3"></v-divider>
-                <div class="text-subtitle-1 font-weight-bold mb-1">{{ selectedTask.owner ? 'Shared with:' : 'Shared by:' }}</div>
-                <div class="shared-with-list">
-                  <v-chip
-                      v-for="user in selectedTask.sharedWith"
-                      :key="user.id"
-                      class="mr-1 mt-1"
-                      size="small"
+                <!-- Timer Controls -->
+                <div class="timer-controls d-flex justify-center mb-4">
+                  <v-btn
+                    v-if="!selectedTask.timerActive"
+                    color="success"
+                    class="mx-1"
+                    :disabled="loading || !selectedTask.pomodoroTimeSeconds"
+                    @click="startTimer(selectedTask.id)"
                   >
-                    {{ user.firstname }} {{ user.lastname }}
-                  </v-chip>
+                    <v-icon>mdi-play</v-icon>
+                    Start
+                  </v-btn>
+                  <v-btn
+                    v-else
+                    color="warning"
+                    class="mx-1"
+                    :disabled="loading"
+                    @click="pauseTimer(selectedTask.id)"
+                  >
+                    <v-icon>mdi-pause</v-icon>
+                    Pause
+                  </v-btn>
+                  <v-btn
+                    color="error"
+                    class="mx-1"
+                    :disabled="loading"
+                    @click="resetTimer(selectedTask.id)"
+                  >
+                    <v-icon>mdi-refresh</v-icon>
+                    Reset
+                  </v-btn>
                 </div>
-              </v-col>
-            </v-row>
-          </v-container>
+
+                <!-- Timer Duration Setting -->
+                <div class="timer-settings">
+                  <v-text-field
+                    v-model="pomodoroMinutes"
+                    label="Pomodoro Duration (minutes)"
+                    type="number"
+                    min="1"
+                    max="60"
+                    :disabled="loading || selectedTask.timerActive"
+                    @change="updatePomodoroTime"
+                    class="mb-2"
+                    density="compact"
+                    hide-details
+                  ></v-text-field>
+                </div>
+              </v-container>
+            </v-window-item>
+          </v-window>
         </v-card-text>
 
         <v-card-actions>
@@ -911,6 +1132,48 @@ onMounted(() => {
 .task-details-description {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Task details dialog tab styles */
+.v-tabs {
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(var(--v-theme-primary), 0.1);
+}
+
+.v-window-item {
+  padding-top: 16px;
+}
+
+/* Timer styles */
+.timer-display {
+  background-color: rgba(var(--v-theme-surface-variant), 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.timer-countdown {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: var(--v-theme-primary);
+  font-family: monospace;
+  letter-spacing: 2px;
+}
+
+.timer-status {
+  font-size: 0.9rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  margin-top: 4px;
+}
+
+.timer-controls {
+  margin-bottom: 16px;
+}
+
+.timer-settings {
+  background-color: rgba(var(--v-theme-surface-variant), 0.05);
+  border-radius: 8px;
+  padding: 16px;
 }
 
 /* Task type toggle styles */
