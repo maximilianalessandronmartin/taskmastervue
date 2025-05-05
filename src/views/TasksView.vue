@@ -1,9 +1,15 @@
-<script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useTaskStore } from '../store/task.store';
-import { useFriendshipStore } from '../store/friendship.store';
+<script lang="ts" setup>
+import {ref, onMounted, computed} from 'vue';
+import {useTaskStore} from '../store/task.store';
+import {useFriendshipStore} from '../store/friendship.store';
 
-import { type CreateTaskDto, type Friendship, type ShareTaskDto, type TaskDto, type UpdateTaskDto } from '../types/models';
+import {
+  type CreateTaskDto,
+  type Friendship,
+  type ShareTaskDto,
+  type TaskDto,
+  type UpdateTaskDto
+} from '../types/models';
 
 const taskStore = useTaskStore();
 const friendshipStore = useFriendshipStore();
@@ -12,8 +18,8 @@ const friendshipStore = useFriendshipStore();
 const shareDialog = ref(false);
 const shareTaskId = ref('');
 const shareUsername = ref('');
-const friends = ref<Friendship[]>([]);
-
+const currentTask = ref<TaskDto | null>(null);
+const friendships = ref<Friendship[]>([]);
 
 
 // Task form data
@@ -48,9 +54,9 @@ const filteredTasks = computed(() => {
   // Filter by search query
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase();
-    tasks = tasks.filter(task => 
-      task.name.toLowerCase().includes(query) || 
-      (task.description && task.description.toLowerCase().includes(query))
+    tasks = tasks.filter(task =>
+        task.name.toLowerCase().includes(query) ||
+        (task.description && task.description.toLowerCase().includes(query))
     );
   }
 
@@ -84,7 +90,7 @@ const fetchFriends = async () => {
   loading.value = true;
   try {
     await friendshipStore.fetchFriends();
-    friends.value = friendshipStore.getFriends;
+    friendships.value = friendshipStore.getFriends;
   } catch (error) {
     console.error('Failed to fetch friends:', error);
   } finally {
@@ -170,29 +176,47 @@ const formatDate = (dateString: string) => {
 
 const getUrgencyColor = (urgency: string) => {
   switch (urgency) {
-    case 'HIGH': return 'error';
-    case 'MEDIUM': return 'warning';
-    case 'LOW': return 'success';
-    default: return 'info';
+    case 'HIGH':
+      return 'error';
+    case 'MEDIUM':
+      return 'warning';
+    case 'LOW':
+      return 'success';
+    default:
+      return 'info';
   }
 };
 
-const openShareDialog = (taskId: string) => {
-  shareTaskId.value = taskId;
+const openShareDialog = (task: TaskDto) => {
+  shareTaskId.value = task.id;
   shareUsername.value = '';
+  currentTask.value = task;
   fetchFriends();
   shareDialog.value = true;
 };
 
 const shareTask = async () => {
+  // Überprüfen Sie, ob shareUsername.value einen Wert hat
   if (!shareUsername.value || !shareTaskId.value) {
     return;
   }
 
   loading.value = true;
   try {
+    // Nehmen wir an, dass shareUsername.value nun direkt den Benutzernamen enthält
     await taskStore.shareTask(shareTaskId.value, shareUsername.value);
-    shareDialog.value = false;
+
+    // Update the currentTask after sharing
+    if (currentTask.value && currentTask.value.id === shareTaskId.value) {
+      // Find the task in the filtered tasks
+      const updatedTask = filteredTasks.value.find(task => task.id === shareTaskId.value);
+      if (updatedTask) {
+        currentTask.value = updatedTask;
+      }
+    }
+
+    // Clear the username field but keep the dialog open to allow sharing with more users
+    shareUsername.value = '';
   } catch (error) {
     console.error('Failed to share task:', error);
   } finally {
@@ -204,6 +228,15 @@ const unshareTask = async (taskId: string, username: string) => {
   loading.value = true;
   try {
     await taskStore.unshareTask(taskId, username);
+
+    // Update the currentTask if it's the one being unshared
+    if (currentTask.value && currentTask.value.id === taskId) {
+      // Find the task in the filtered tasks
+      const updatedTask = filteredTasks.value.find(task => task.id === taskId);
+      if (updatedTask) {
+        currentTask.value = updatedTask;
+      }
+    }
   } catch (error) {
     console.error('Failed to unshare task:', error);
   } finally {
@@ -225,33 +258,33 @@ onMounted(fetchTasks);
         <v-row>
           <v-col cols="12" sm="4">
             <v-text-field
-              v-model="searchQuery"
-              label="Search tasks"
-              prepend-icon="mdi-magnify"
-              clearable
-              :hide-details="'auto'"
+                v-model="searchQuery"
+                :hide-details="'auto'"
+                clearable
+                label="Search tasks"
+                prepend-icon="mdi-magnify"
             ></v-text-field>
           </v-col>
           <v-col cols="12" sm="4">
             <v-select
-              v-model="urgencyFilter"
-              label="Filter by urgency"
-              :items="[
+                v-model="urgencyFilter"
+                :hide-details="true"
+                :items="[
                 { title: 'All', value: 'ALL' },
-                { title: 'High', value: 'HIGH' },
+                { title: 'Low', value: 'LOW' },
                 { title: 'Medium', value: 'MEDIUM' },
-                { title: 'Low', value: 'LOW' }
+                { title: 'High', value: 'HIGH' }
               ]"
-              item-title="title"
-              item-value="value"
-              :hide-details="true"
+                item-title="title"
+                item-value="value"
+                label="Filter by urgency"
             ></v-select>
           </v-col>
           <v-col cols="12" sm="4">
             <v-switch
-              v-model="showCompleted"
-              label="Show completed tasks"
-              :hide-details="true"
+                v-model="showCompleted"
+                :hide-details="true"
+                label="Show completed tasks"
             ></v-switch>
           </v-col>
         </v-row>
@@ -263,16 +296,16 @@ onMounted(fetchTasks);
       <v-card-text>
         <v-list v-if="filteredTasks.length > 0">
           <v-list-item
-            v-for="task in filteredTasks"
-            :key="task.id"
-            :class="{ 'completed-task': task.completed }"
+              v-for="task in filteredTasks"
+              :key="task.id"
+              :class="{ 'completed-task': task.completed }"
           >
             <template v-slot:prepend>
               <v-checkbox
-                :model-value="task.completed"
-                @change="completeTask(task.id)"
-                :disabled="loading"
-                :hide-details="true"
+                  :disabled="loading"
+                  :hide-details="true"
+                  :model-value="task.completed"
+                  @change="completeTask(task.id)"
               ></v-checkbox>
             </template>
 
@@ -285,63 +318,48 @@ onMounted(fetchTasks);
                 {{ task.description }}
               </v-list-item-subtitle>
 
-              <!-- Shared with list -->
-              <div v-if="task.sharedWith && task.sharedWith.length > 0" class="shared-with-list mt-2">
-                <div class="shared-with-title">Shared with:</div>
-                <v-chip
-                  v-for="user in task.sharedWith"
-                  :key="user.id"
-                  size="small"
-                  class="mr-1 mt-1"
-                  closable
-                  @click:close="unshareTask(task.id, user.username)"
-                  :disabled="loading || !task.owner"
-                >
-                  {{ user.username }}
-                </v-chip>
-              </div>
 
               <div class="task-metadata">
                 <div class="task-info">
                   <v-chip
-                    :color="getUrgencyColor(task.urgency)"
-                    size="small"
-                    class="mr-2 mt-1"
+                      :color="getUrgencyColor(task.urgency)"
+                      class="mr-2 mt-1"
+                      size="small"
                   >
                     {{ task.urgency }}
                   </v-chip>
-                  <v-chip size="small" class="mr-2 mt-1">
+                  <v-chip class="mr-2 mt-1" size="small">
                     {{ formatDate(task.dueDate) }}
                   </v-chip>
-                  <v-chip v-if="task.visibility === 'SHARED'" color="info" size="small" class="mr-2 mt-1">
+                  <v-chip v-if="task.visibility === 'SHARED'" class="mr-2 mt-1" color="info" size="small">
                     SHARED
                   </v-chip>
                 </div>
                 <div class="task-actions">
                   <v-btn
-                    icon="mdi-pencil"
-                    variant="text"
-                    size="small"
-                    @click="openEditTaskDialog(task)"
-                    :disabled="loading"
-                    class="mt-1"
+                      :disabled="loading"
+                      class="mt-1"
+                      icon="mdi-pencil"
+                      size="small"
+                      variant="text"
+                      @click="openEditTaskDialog(task)"
                   ></v-btn>
                   <v-btn
-                    icon="mdi-share-variant"
-                    variant="text"
-                    size="small"
-                    @click="openShareDialog(task.id)"
-                    :disabled="loading"
-                    class="mt-1"
-                    v-if="!task.sharedWith || task.owner"
+                      v-if="!task.sharedWith || task.owner"
+                      :disabled="loading"
+                      class="mt-1"
+                      icon="mdi-share-variant"
+                      size="small"
+                      variant="text"
+                      @click="openShareDialog(task)"
                   ></v-btn>
                   <v-btn
-                    icon="mdi-delete"
-                    variant="text"
-                    size="small"
-                    @click="deleteTask(task.id)"
-                    :disabled="loading"
-                    class="mt-1"
+                      :disabled="loading"
+                      class="mt-1"
+                      icon="mdi-delete"
+                      size="small"
+                      variant="text"
+                      @click="deleteTask(task.id)"
                   ></v-btn>
                 </div>
               </div>
@@ -350,21 +368,21 @@ onMounted(fetchTasks);
         </v-list>
 
         <v-alert
-          v-else
-          type="info"
-          text="No tasks found. Create a new task to get started!"
+            v-else
+            text="No tasks found. Create a new task to get started!"
+            type="info"
         ></v-alert>
       </v-card-text>
     </v-card>
 
     <!-- Add Task FAB -->
     <v-btn
-      color="primary"
-      icon="mdi-plus"
-      size="large"
-      class="add-task-btn"
-      @click="openCreateTaskDialog"
-      :disabled="loading"
+        :disabled="loading"
+        class="add-task-btn"
+        color="primary"
+        icon="mdi-plus"
+        size="large"
+        @click="openCreateTaskDialog"
     ></v-btn>
 
     <!-- Task Dialog -->
@@ -379,36 +397,36 @@ onMounted(fetchTasks);
             <v-row>
               <v-col cols="12">
                 <v-text-field
-                  v-model="taskForm.name"
-                  label="Task Name"
-                  required
+                    v-model="taskForm.name"
+                    label="Task Name"
+                    required
                 ></v-text-field>
               </v-col>
               <v-col cols="12">
                 <v-textarea
-                  v-model="taskForm.description"
-                  label="Description"
-                  rows="3"
+                    v-model="taskForm.description"
+                    label="Description"
+                    rows="3"
                 ></v-textarea>
               </v-col>
               <v-col cols="12">
                 <v-text-field
-                  v-model="taskForm.dueDate"
-                  label="Due Date"
-                  type="datetime-local"
+                    v-model="taskForm.dueDate"
+                    label="Due Date"
+                    type="datetime-local"
                 ></v-text-field>
               </v-col>
               <v-col cols="12">
                 <v-select
-                  v-model="taskForm.urgency"
-                  label="Urgency"
-                  :items="[
+                    v-model="taskForm.urgency"
+                    :items="[
                     { title: 'High', value: 'HIGH' },
                     { title: 'Medium', value: 'MEDIUM' },
                     { title: 'Low', value: 'LOW' }
                   ]"
-                  item-title="title"
-                  item-value="value"
+                    item-title="title"
+                    item-value="value"
+                    label="Urgency"
                 ></v-select>
               </v-col>
             </v-row>
@@ -418,19 +436,19 @@ onMounted(fetchTasks);
         <v-card-actions>
           <v-spacer></v-spacer>
           <v-btn
-            color="secondary"
-            text=""
-            @click="taskDialog = false"
-            :disabled="loading"
+              :disabled="loading"
+              color="secondary"
+              text=""
+              @click="taskDialog = false"
           >
             Cancel
           </v-btn>
           <v-btn
-            color="primary"
-            text=""
-            @click="saveTask"
-            :loading="loading"
-            :disabled="loading || !taskForm.name"
+              :disabled="loading || !taskForm.name"
+              :loading="loading"
+              color="primary"
+              text=""
+              @click="saveTask"
           >
             Save
           </v-btn>
@@ -450,15 +468,50 @@ onMounted(fetchTasks);
             <v-row>
               <v-col cols="12">
                 <v-select
-                  v-model="shareUsername"
-                  label="Select Friend"
-                  :items="friends"
-                  item-title="friend.username"
-                  item-value="friend.username"
-                  :disabled="loading || friends.length === 0"
-                  :hint="friends.length === 0 ? 'You have no friends to share with' : ''"
-                  persistent-hint
-                ></v-select>
+                    v-model="shareUsername"
+                    :disabled="loading || friendships.length === 0"
+                    :hint="friendships.length === 0 ? 'You have no friends to share with' : ''"
+                    :items="friendships"
+                    item-title="friend.firstname"
+
+                    item-value="friend.username"
+                    label="Select Friend"
+                    persistent-hint
+                >
+                  <template v-slot:item="{ item, props }">
+                    <v-list-item v-bind="props">
+                      <v-list-item-subtitle>{{ item.raw.friend?.username || 'Kein Benutzername' }}</v-list-item-subtitle>
+                    </v-list-item>
+                  </template>
+                  <template v-slot:selection="{ item }">
+                    <div v-if="item.raw && item.raw.friend">
+                      <div>{{ item.raw.friend.firstname }}</div>
+                      <small>{{ item.raw.friend.username }}</small>
+                    </div>
+                    <div v-else>Ungültiger Benutzer</div>
+                  </template>
+                </v-select>
+              </v-col>
+            </v-row>
+
+            <!-- Shared with list -->
+            <v-row v-if="currentTask && currentTask.sharedWith && currentTask.sharedWith.length > 0">
+              <v-col cols="12">
+                <v-divider class="my-3"></v-divider>
+                <h3 class="text-subtitle-1 mb-2">Currently shared with:</h3>
+                <div class="shared-with-list">
+                  <v-chip
+                      v-for="user in currentTask.sharedWith"
+                      :key="user.id"
+                      :disabled="loading || !currentTask.owner"
+                      class="mr-1 mt-1"
+                      closable
+                      size="small"
+                      @click:close="unshareTask(currentTask.id, user.username)"
+                  >
+                    {{ user.firstname }} {{ user.lastname }}
+                  </v-chip>
+                </div>
               </v-col>
             </v-row>
           </v-container>
@@ -467,19 +520,19 @@ onMounted(fetchTasks);
         <v-card-actions>
           <v-spacer></v-spacer>
           <v-btn
-            color="secondary"
-            text=""
-            @click="shareDialog = false"
-            :disabled="loading"
+              :disabled="loading"
+              color="secondary"
+              text=""
+              @click="shareDialog = false"
           >
-            Cancel
+            Close
           </v-btn>
           <v-btn
-            color="primary"
-            text=""
-            @click="shareTask"
-            :loading="loading"
-            :disabled="loading || !shareUsername"
+              :disabled="loading || !shareUsername"
+              :loading="loading"
+              color="primary"
+              text=""
+              @click="shareTask"
           >
             Share
           </v-btn>
