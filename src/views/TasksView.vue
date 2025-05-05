@@ -6,7 +6,6 @@ import {useFriendshipStore} from '../store/friendship.store';
 import {
   type CreateTaskDto,
   type Friendship,
-  type ShareTaskDto,
   type TaskDto,
   type UpdateTaskDto
 } from '../types/models';
@@ -36,6 +35,9 @@ const taskForm = ref<CreateTaskDto>({
   dueDate: '',
   urgency: 'MEDIUM'
 });
+// Separate date and time for better UX
+const taskDate = ref('');
+const taskTime = ref('');
 
 // Task filter
 const showCompleted = ref(false);
@@ -127,6 +129,9 @@ const openCreateTaskDialog = () => {
     dueDate: '',
     urgency: 'MEDIUM'
   };
+  // Reset date and time fields
+  taskDate.value = '';
+  taskTime.value = '';
   taskDialog.value = true;
 };
 
@@ -134,12 +139,19 @@ const openEditTaskDialog = (task: TaskDto) => {
   isEditMode.value = true;
   currentTaskId.value = task.id;
 
-  // Format the date for datetime-local input if it exists
+  // Format the date for date and time inputs if it exists
   let formattedDueDate = '';
   if (task.dueDate) {
     // Create a date object and format it to YYYY-MM-DDThh:mm
     const date = new Date(task.dueDate);
     formattedDueDate = date.toISOString().slice(0, 16); // Format as YYYY-MM-DDThh:mm
+
+    // Split into date and time components
+    taskDate.value = formattedDueDate.split('T')[0]; // YYYY-MM-DD
+    taskTime.value = formattedDueDate.split('T')[1]; // hh:mm
+  } else {
+    taskDate.value = '';
+    taskTime.value = '';
   }
 
   taskForm.value = {
@@ -159,6 +171,17 @@ const saveTask = async () => {
   loading.value = true;
 
   try {
+    // Combine date and time if both are provided
+    if (taskDate.value && taskTime.value) {
+      taskForm.value.dueDate = `${taskDate.value}T${taskTime.value}`;
+    } else if (taskDate.value) {
+      // If only date is provided, set time to start of day
+      taskForm.value.dueDate = `${taskDate.value}T00:00`;
+    } else {
+      // If no date is provided, clear the due date
+      taskForm.value.dueDate = '';
+    }
+
     if (isEditMode.value) {
       await taskStore.updateTask(currentTaskId.value, taskForm.value as UpdateTaskDto);
     } else {
@@ -202,6 +225,12 @@ const formatDate = (dateString: string) => {
   if (!dateString) return 'No due date';
   const date = new Date(dateString);
   return date.toLocaleDateString();
+};
+
+const formatTime = (dateString: string) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const getUrgencyColor = (urgency: string) => {
@@ -280,7 +309,7 @@ const unshareTask = async (taskId: string, username: string) => {
 };
 
 // Watch for changes in the task type filter
-watch(taskTypeFilter, (newValue) => {
+watch(taskTypeFilter, (_) => {
   fetchTasks();
 });
 
@@ -298,7 +327,7 @@ onMounted(() => {
     <v-btn-toggle
       v-model="taskTypeFilter"
       color="primary"
-      mandatory
+      :mandatory="true"
       class="mb-4 task-type-toggle"
     >
       <v-btn value="all">
@@ -424,15 +453,18 @@ onMounted(() => {
               <div class="task-info">
                 <v-chip
                     :color="getUrgencyColor(task.urgency)"
-                    class="mr-2"
+                    class="mr-2 mb-1"
                     size="x-small"
                 >
                   {{ task.urgency }}
                 </v-chip>
-                <v-chip class="mr-2" size="x-small">
+                <v-chip v-if="task.dueDate" class="mr-2 mb-1" size="x-small">
                   {{ formatDate(task.dueDate) }}
                 </v-chip>
-                <v-chip v-if="task.visibility === 'SHARED'" class="mr-2" :color="task.owner ? 'primary' : 'info'" size="x-small">
+                <v-chip v-if="task.dueDate" class="mr-2 mb-1" size="x-small">
+                  {{ formatTime(task.dueDate) }}
+                </v-chip>
+                <v-chip v-if="task.visibility === 'SHARED'" class="mr-2 mb-1" :color="task.owner ? 'primary' : 'info'" size="x-small">
                   {{ task.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
                 </v-chip>
               </div>
@@ -458,7 +490,7 @@ onMounted(() => {
 
     <!-- Task Dialog -->
     <v-dialog v-model="taskDialog" max-width="500px">
-      <v-card>
+      <v-card class="task-dialog-card">
         <v-card-title>
           <span class="text-h5">{{ isEditMode ? 'Edit Task' : 'New Task' }}</span>
         </v-card-title>
@@ -471,6 +503,10 @@ onMounted(() => {
                     v-model="taskForm.name"
                     label="Task Name"
                     required
+                    class="task-input"
+                    variant="outlined"
+                    hide-details="auto"
+                    :loading="false"
                 ></v-text-field>
               </v-col>
               <v-col cols="12">
@@ -478,14 +514,43 @@ onMounted(() => {
                     v-model="taskForm.description"
                     label="Description"
                     rows="3"
+                    class="task-input"
+                    variant="outlined"
+                    hide-details="auto"
+                    :loading="false"
                 ></v-textarea>
               </v-col>
               <v-col cols="12">
-                <v-text-field
-                    v-model="taskForm.dueDate"
-                    label="Due Date"
-                    type="datetime-local"
-                ></v-text-field>
+                <div class="date-time-container">
+                  <v-row>
+                    <v-col cols="12" sm="6">
+                      <v-text-field
+                          v-model="taskDate"
+                          label="Due Date"
+                          type="date"
+                          hint="Select the date"
+                          persistent-hint
+                          class="task-input"
+                          variant="outlined"
+                          density="comfortable"
+                          :loading="false"
+                      ></v-text-field>
+                    </v-col>
+                    <v-col cols="12" sm="6">
+                      <v-text-field
+                          v-model="taskTime"
+                          label="Due Time"
+                          type="time"
+                          hint="Select the time"
+                          persistent-hint
+                          class="task-input"
+                          variant="outlined"
+                          density="comfortable"
+                          :loading="false"
+                      ></v-text-field>
+                    </v-col>
+                  </v-row>
+                </div>
               </v-col>
               <v-col cols="12">
                 <v-select
@@ -498,6 +563,10 @@ onMounted(() => {
                     item-title="title"
                     item-value="value"
                     label="Urgency"
+                    class="task-input"
+                    variant="outlined"
+                    hide-details="auto"
+                    :loading="false"
                 ></v-select>
               </v-col>
             </v-row>
@@ -623,14 +692,17 @@ onMounted(() => {
           <v-container>
             <v-row>
               <v-col cols="12">
-                <div class="d-flex align-center mb-2">
-                  <v-chip :color="getUrgencyColor(selectedTask.urgency)" class="mr-2">
+                <div class="d-flex align-center flex-wrap mb-2">
+                  <v-chip :color="getUrgencyColor(selectedTask.urgency)" class="mr-2 mb-1">
                     {{ selectedTask.urgency }}
                   </v-chip>
-                  <v-chip class="mr-2">
+                  <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
                     {{ formatDate(selectedTask.dueDate) }}
                   </v-chip>
-                  <v-chip v-if="selectedTask.visibility === 'SHARED'" :color="selectedTask.owner ? 'primary' : 'info'">
+                  <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
+                    {{ formatTime(selectedTask.dueDate) }}
+                  </v-chip>
+                  <v-chip v-if="selectedTask.visibility === 'SHARED'" :color="selectedTask.owner ? 'primary' : 'info'" class="mb-1">
                     {{ selectedTask.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
                   </v-chip>
                 </div>
@@ -702,6 +774,41 @@ onMounted(() => {
   position: fixed;
   bottom: 70px;
   right: 16px;
+}
+
+/* Improved styling for the task dialog */
+.date-time-container {
+  background-color: rgba(var(--v-theme-surface-variant), 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.task-dialog-card {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.task-dialog-card v-card-title {
+  padding: 20px 24px;
+  background-color: rgba(var(--v-theme-primary), 0.05);
+  border-bottom: 1px solid rgba(var(--v-theme-primary), 0.1);
+}
+
+.task-dialog-card v-card-text {
+  padding-top: 24px;
+}
+
+/* Input field styling */
+.task-input {
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+}
+
+.task-input:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .task-content {
@@ -808,8 +915,8 @@ onMounted(() => {
 
 /* Task type toggle styles */
 .task-type-toggle {
-  width: 100%;
   margin-bottom: 16px;
+  display: flex;
 }
 
 .task-type-toggle .v-btn {
@@ -828,8 +935,7 @@ onMounted(() => {
   }
 
   .task-type-toggle .v-btn {
-    min-width: 120px;
-
+    min-width: 100px;
   }
 }
 </style>

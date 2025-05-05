@@ -106,6 +106,7 @@ const resetAccount = async () => {
           <p><strong>Name:</strong> {{ authStore.user.firstname }} {{ authStore.user.lastname }}</p>
           <p><strong>E-Mail:</strong> {{ authStore.user.username }}</p>
           <p><strong>XP:</strong> {{ authStore.user.xp }}</p>
+          <p><strong>User since:</strong> {{ new Date(authStore.user.createdAt).toLocaleDateString() }}</p>
         </div>
       </v-card-text>
     </v-card>

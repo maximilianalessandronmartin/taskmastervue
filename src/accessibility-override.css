@@ -1,0 +1,156 @@
+@media (forced-colors: active) {
+    /* Global overrides for high contrast mode */
+    /* These replace the deprecated -ms-high-contrast media queries */
+
+    /* Buttons */
+    .v-btn {
+        forced-color-adjust: none;
+        border: 1px solid transparent;
+    }
+
+    .v-btn--active,
+    .v-btn--variant-elevated,
+    .v-btn--variant-flat {
+        border-color: ButtonText;
+    }
+
+    /* Form controls */
+    .v-text-field,
+    .v-select,
+    .v-textarea,
+    .v-checkbox,
+    .v-radio,
+    .v-switch {
+        forced-color-adjust: none;
+    }
+
+    .v-field__input {
+        border: 1px solid ButtonText;
+    }
+
+    /* Ensure checkboxes and radio buttons are visible */
+    .v-selection-control__input {
+        forced-color-adjust: auto;
+    }
+
+    /* Navigation elements */
+    .v-navigation-drawer,
+    .v-app-bar,
+    .v-toolbar,
+    .v-tabs,
+    .v-bottom-navigation {
+        forced-color-adjust: none;
+        border: 1px solid ButtonText;
+    }
+
+    /* Make active tab visible */
+    .v-tab--selected {
+        border-bottom: 2px solid Highlight;
+        color: Highlight !important;
+    }
+
+    /* Cards and containers */
+    .v-card,
+    .v-sheet,
+    .v-list,
+    .v-expansion-panel {
+        forced-color-adjust: none;
+        border: 1px solid ButtonText;
+    }
+
+    .v-list-item {
+        forced-color-adjust: none;
+    }
+
+    .v-list-item--active {
+        border-left: 3px solid Highlight;
+    }
+
+    /* Dialogs and overlays */
+    .v-dialog,
+    .v-menu,
+    .v-overlay {
+        forced-color-adjust: none;
+        border: 1px solid ButtonText;
+    }
+
+    /* Indicators */
+    .v-progress-circular,
+    .v-progress-linear,
+    .v-alert,
+    .v-snackbar,
+    .v-badge {
+        forced-color-adjust: none;
+    }
+
+    /* Progress indicators need special handling */
+    .v-progress-linear__determinate {
+        background-color: Highlight !important;
+    }
+
+    /* Chips and small elements */
+    .v-chip {
+        forced-color-adjust: none;
+        border: 1px solid ButtonText;
+    }
+
+    .v-tooltip,
+    .v-icon {
+        forced-color-adjust: none;
+    }
+
+    /* Task-specific elements */
+    .task-item {
+        forced-color-adjust: none;
+        border: 1px solid ButtonText;
+    }
+
+    .task-item::before {
+        background-color: Highlight !important;
+    }
+
+    .task-item.completed-task::before {
+        background-color: GrayText !important;
+    }
+
+    .completed-task .text-decoration-line-through {
+        color: GrayText !important;
+    }
+
+    /* Ensure focus indicators are visible */
+    *:focus {
+        outline: 2px solid Highlight !important;
+        outline-offset: 2px !important;
+    }
+
+    /* Ensure text remains readable */
+    body, .v-application {
+        color: CanvasText !important;
+        background-color: Canvas !important;
+    }
+
+    /* Button toggle groups */
+    .v-btn-toggle {
+        border: 1px solid ButtonText;
+    }
+
+    .v-btn-toggle .v-btn--active {
+        background-color: Highlight !important;
+        color: HighlightText !important;
+    }
+
+    /* Ensure links are visible */
+    a, .v-btn--variant-text {
+        color: LinkText !important;
+    }
+
+    a:visited {
+        color: VisitedText !important;
+    }
+
+    /* Ensure disabled elements are properly styled */
+    *:disabled {
+        color: GrayText !important;
+        border-color: GrayText !important;
+    }
+}

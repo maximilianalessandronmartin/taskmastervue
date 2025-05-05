@@ -9,6 +9,8 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './style.css'
+import './accessibility-override.css'
+
 
 // Import Vuetify and its dependencies
 import 'vuetify/styles/main.css'

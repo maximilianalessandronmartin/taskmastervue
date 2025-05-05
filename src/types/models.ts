@@ -16,6 +16,7 @@ export interface User {
 
 export interface UserDto {
   id: string;
+  createdAt: string;
   firstname: string;
   lastname: string;
   username: string;
