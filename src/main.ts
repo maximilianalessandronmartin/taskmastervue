@@ -25,6 +25,11 @@ import '@mdi/font/css/materialdesignicons.css'
  */
 const pinia = createPinia()
 
+
+// Import Vuetify and its dependencies
+import 'vuetify/styles/main.css'
+import '@mdi/font/css/materialdesignicons.css'
+
 /**
  * Initialize Vuetify with light and dark themes
  * 
@@ -49,7 +54,31 @@ const vuetify = createVuetify({
           error: '#FF5252',
           info: '#2196F3',
           success: '#4CAF50',
-          warning: '#FFC107'
+          warning: '#FFC107',
+          // Zusätzliche Oberflächen-Farben
+          background: '#FFFFFF',
+          surface: '#FFFFFF',
+          'surface-variant': '#EEEEEE',
+          'surface-bright': '#FFFFFF',
+          'surface-light': '#F5F5F5',
+          'surface-dark': '#E0E0E0',
+
+          // Text-Farben
+          'on-background': '#000000',
+          'on-surface': '#000000',
+          'on-primary': '#FFFFFF',
+          'on-secondary': '#FFFFFF',
+          'on-error': '#FFFFFF',
+          'on-info': '#FFFFFF',
+          'on-success': '#FFFFFF',
+          'on-warning': '#000000',
+
+          // Weitere UI-Komponenten-Farben
+          'primary-darken-1': '#1565C0',
+          'secondary-darken-1': '#303030',
+          'primary-lighten-1': '#42A5F5',
+          'secondary-lighten-1': '#616161'
+
         }
       },
       // Dark theme configuration
@@ -62,7 +91,32 @@ const vuetify = createVuetify({
           error: '#FF5252',
           info: '#2196F3',
           success: '#4CAF50',
-          warning: '#FFC107'
+          warning: '#FFC107',
+
+          // Zusätzliche Oberflächen-Farben
+          background: '#121212',
+          surface: '#212121',
+          'surface-variant': '#424242',
+          'surface-bright': '#303030',
+          'surface-light': '#383838',
+          'surface-dark': '#1E1E1E',
+
+          // Text-Farben
+          'on-background': '#FFFFFF',
+          'on-surface': '#FFFFFF',
+          'on-primary': '#FFFFFF',
+          'on-secondary': '#FFFFFF',
+          'on-error': '#FFFFFF',
+          'on-info': '#FFFFFF',
+          'on-success': '#FFFFFF',
+          'on-warning': '#000000',
+
+          // Weitere UI-Komponenten-Farben
+          'primary-darken-1': '#1E88E5',
+          'secondary-darken-1': '#616161',
+          'primary-lighten-1': '#64B5F6',
+          'secondary-lighten-1': '#606060'
+
         }
       }
     }

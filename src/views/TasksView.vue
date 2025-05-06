@@ -6,7 +6,7 @@ import {useFriendshipStore} from '../store/friendship.store';
 import {
   type CreateTaskDto,
   type Friendship,
-  type TaskDto,
+  type TaskDto, type TimerUpdateDto,
   type UpdateTaskDto
 } from '../types/models';
 
@@ -35,6 +35,7 @@ const timerInterval = ref<number | null>(null);
 const taskDialog = ref(false);
 const isEditMode = ref(false);
 const currentTaskId = ref('');
+const showAdvancedOptions = ref(false);
 const taskForm = ref<CreateTaskDto>({
   name: '',
   description: '',
@@ -138,6 +139,8 @@ const openCreateTaskDialog = () => {
   // Reset date and time fields
   taskDate.value = '';
   taskTime.value = '';
+  // Hide advanced options by default for new tasks
+  showAdvancedOptions.value = false;
   taskDialog.value = true;
 };
 
@@ -166,6 +169,8 @@ const openEditTaskDialog = (task: TaskDto) => {
     dueDate: formattedDueDate,
     urgency: task.urgency
   };
+  // Always show advanced options when editing
+  showAdvancedOptions.value = true;
   taskDialog.value = true;
 };
 
@@ -549,7 +554,6 @@ onMounted(() => {
           :key="task.id"
           :class="{ 'completed-task': task.completed }"
           class="task-item"
-          @click="openTaskDetailsDialog(task)"
       >
             <template v-slot:prepend>
               <v-checkbox
@@ -570,25 +574,12 @@ onMounted(() => {
                 <div class="task-actions">
                   <v-btn
                       :disabled="loading"
-                      icon="mdi-pencil"
-                      size="small"
-                      variant="text"
-                      @click.stop="openEditTaskDialog(task)"
-                  ></v-btn>
-                  <v-btn
-                      v-if="!task.sharedWith || task.owner"
-                      :disabled="loading"
-                      icon="mdi-share-variant"
-                      size="small"
-                      variant="text"
-                      @click.stop="openShareDialog(task)"
-                  ></v-btn>
-                  <v-btn
-                      :disabled="loading"
-                      icon="mdi-delete"
-                      size="small"
-                      variant="text"
-                      @click.stop="deleteTask(task.id)"
+                      icon="mdi-information-outline"
+                      size="medium"
+                      variant="tonal"
+                      class="task-action-btn"
+                      aria-label="View task details"
+                      @click.stop="openTaskDetailsDialog(task)"
                   ></v-btn>
                 </div>
               </div>
@@ -652,66 +643,83 @@ onMounted(() => {
                     :loading="false"
                 ></v-text-field>
               </v-col>
-              <v-col cols="12">
-                <v-textarea
-                    v-model="taskForm.description"
-                    label="Description"
-                    rows="3"
-                    class="task-input"
-                    variant="outlined"
-                    hide-details="auto"
-                    :loading="false"
-                ></v-textarea>
+
+              <!-- Toggle button for advanced options -->
+              <v-col cols="12" class="pt-0">
+                <v-btn
+                    variant="text"
+                    color="primary"
+                    @click="showAdvancedOptions = !showAdvancedOptions"
+                    class="px-0"
+                >
+                  <v-icon class="mr-1">{{ showAdvancedOptions ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
+                  {{ showAdvancedOptions ? 'Hide additional options' : 'Show additional options' }}
+                </v-btn>
               </v-col>
-              <v-col cols="12">
-                <div class="date-time-container">
-                  <v-row>
-                    <v-col cols="12" sm="6">
-                      <v-text-field
-                          v-model="taskDate"
-                          label="Due Date"
-                          type="date"
-                          hint="Select the date"
-                          persistent-hint
-                          class="task-input"
-                          variant="outlined"
-                          density="comfortable"
-                          :loading="false"
-                      ></v-text-field>
-                    </v-col>
-                    <v-col cols="12" sm="6">
-                      <v-text-field
-                          v-model="taskTime"
-                          label="Due Time"
-                          type="time"
-                          hint="Select the time"
-                          persistent-hint
-                          class="task-input"
-                          variant="outlined"
-                          density="comfortable"
-                          :loading="false"
-                      ></v-text-field>
-                    </v-col>
-                  </v-row>
-                </div>
-              </v-col>
-              <v-col cols="12">
-                <v-select
-                    v-model="taskForm.urgency"
-                    :items="[
-                    { title: 'High', value: 'HIGH' },
-                    { title: 'Medium', value: 'MEDIUM' },
-                    { title: 'Low', value: 'LOW' }
-                  ]"
-                    item-title="title"
-                    item-value="value"
-                    label="Urgency"
-                    class="task-input"
-                    variant="outlined"
-                    hide-details="auto"
-                    :loading="false"
-                ></v-select>
-              </v-col>
+
+              <!-- Advanced options section -->
+              <template v-if="showAdvancedOptions">
+                <v-col cols="12">
+                  <v-textarea
+                      v-model="taskForm.description"
+                      label="Description"
+                      rows="3"
+                      class="task-input"
+                      variant="outlined"
+                      hide-details="auto"
+                      :loading="false"
+                  ></v-textarea>
+                </v-col>
+                <v-col cols="12">
+                  <div class="date-time-container">
+                    <v-row>
+                      <v-col cols="12" sm="6">
+                        <v-text-field
+                            v-model="taskDate"
+                            label="Due Date"
+                            type="date"
+                            hint="Select the date"
+                            persistent-hint
+                            class="task-input"
+                            variant="outlined"
+                            density="comfortable"
+                            :loading="false"
+                        ></v-text-field>
+                      </v-col>
+                      <v-col cols="12" sm="6">
+                        <v-text-field
+                            v-model="taskTime"
+                            label="Due Time"
+                            type="time"
+                            hint="Select the time"
+                            persistent-hint
+                            class="task-input"
+                            variant="outlined"
+                            density="comfortable"
+                            :loading="false"
+                        ></v-text-field>
+                      </v-col>
+                    </v-row>
+                  </div>
+                </v-col>
+                <v-col cols="12">
+                  <v-select
+                      v-model="taskForm.urgency"
+                      :items="[
+                      { title: 'High', value: 'HIGH' },
+                      { title: 'Medium', value: 'MEDIUM' },
+                      { title: 'Low', value: 'LOW' }
+                    ]"
+                      item-title="title"
+                      item-value="value"
+                      label="Urgency"
+                      class="task-input"
+                      variant="outlined"
+                      hide-details="auto"
+                      :loading="false"
+                  ></v-select>
+                </v-col>
+              </template>
             </v-row>
           </v-container>
         </v-card-text>
@@ -957,12 +965,6 @@ onMounted(() => {
         </v-card-text>
 
         <v-card-actions>
-          <v-checkbox
-              :model-value="selectedTask.completed"
-              :disabled="loading"
-              label="Completed"
-              @change="completeTask(selectedTask.id)"
-          ></v-checkbox>
           <v-spacer></v-spacer>
           <v-btn
               :disabled="loading"
@@ -979,6 +981,23 @@ onMounted(() => {
               @click="openEditTaskDialog(selectedTask); detailsDialog = false"
           >
             Edit
+          </v-btn>
+          <v-btn
+              v-if="!selectedTask.sharedWith || selectedTask.owner"
+              :disabled="loading"
+              color="info"
+              text=""
+              @click="openShareDialog(selectedTask); detailsDialog = false"
+          >
+            Share
+          </v-btn>
+          <v-btn
+              :disabled="loading"
+              color="error"
+              text=""
+              @click="deleteTask(selectedTask.id); detailsDialog = false"
+          >
+            Delete
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -1044,21 +1063,10 @@ onMounted(() => {
 .task-title {
   font-weight: bold;
   margin-bottom: 0;
-  max-width: 70%;
+  max-width: 85%;
 }
 
-.task-description {
-  margin-bottom: 8px;
-  word-break: break-word;
-  display: none; /* Hide description in the list view */
-}
-
-.task-metadata {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-}
+/* Task description and metadata styles removed as they were unused */
 
 .task-info {
   display: flex;
@@ -1071,6 +1079,20 @@ onMounted(() => {
   display: flex;
   align-items: center;
   margin-left: auto;
+  padding: 4px 0;
+}
+
+.task-action-btn {
+  min-width: 44px !important; /* Minimum touch target size per WCAG */
+  min-height: 44px !important; /* Minimum touch target size per WCAG */
+  border-radius: 8px;
+  margin: 0 2px;
+  transition: all 0.2s ease;
+}
+
+.task-action-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .shared-with-list {
@@ -1079,12 +1101,7 @@ onMounted(() => {
   align-items: center;
 }
 
-.shared-with-title {
-  font-size: 0.8rem;
-  color: rgba(0, 0, 0, 0.6);
-  margin-right: 8px;
-  margin-top: 4px;
-}
+/* shared-with-title selector removed as it was unused */
 
 /* Task list styling for visual separation */
 .task-list {
@@ -1100,7 +1117,9 @@ onMounted(() => {
   background-color: rgba(255, 255, 255, 0.8);
   overflow: hidden;
   position: relative;
-  height: 72px !important; /* Fixed height for all task items */
+  height: auto !important; /* Allow height to adjust based on content */
+  min-height: 80px !important; /* Increased minimum height for better touch targets */
+  padding: 8px 16px; /* Add padding for better spacing */
   cursor: pointer;
 }
 
@@ -1120,12 +1139,12 @@ onMounted(() => {
   top: 0;
   bottom: 0;
   width: 4px;
-  background-color: rgb(var(--v-theme-primary), #1976d2);
+  background-color: rgb(var(--v-theme-primary));
   opacity: 0.7;
 }
 
 .task-item.completed-task::before {
-  background-color: rgb(var(--v-theme-success), #4caf50);
+  background-color: rgb(var(--v-theme-success));
 }
 
 /* Task details dialog styles */
@@ -1135,14 +1154,7 @@ onMounted(() => {
 }
 
 /* Task details dialog tab styles */
-.v-tabs {
-  margin-bottom: 16px;
-  border-bottom: 1px solid rgba(var(--v-theme-primary), 0.1);
-}
-
-.v-window-item {
-  padding-top: 16px;
-}
+/* v-tabs and v-window-item selectors removed as they were unused */
 
 /* Timer styles */
 .timer-display {
@@ -1155,7 +1167,7 @@ onMounted(() => {
 .timer-countdown {
   font-size: 2.5rem;
   font-weight: bold;
-  color: var(--v-theme-primary);
+  color: rgb(var(--v-theme-primary));
   font-family: monospace;
   letter-spacing: 2px;
 }
@@ -1182,7 +1194,8 @@ onMounted(() => {
   display: flex;
 }
 
-.task-type-toggle .v-btn {
+/* Styling for v-btn inside task-type-toggle */
+.task-type-toggle > * {
   flex: 1;
 }
 
@@ -1190,6 +1203,8 @@ onMounted(() => {
 @media (max-width: 600px) {
   .task-item {
     margin-bottom: 8px;
+    min-height: 90px !important; /* Slightly taller on mobile for better touch */
+    padding: 8px 12px; /* Adjusted padding for mobile */
   }
 
   .task-type-toggle {
@@ -1197,8 +1212,28 @@ onMounted(() => {
     overflow-x: auto;
   }
 
-  .task-type-toggle .v-btn {
+  /* Styling for buttons inside task-type-toggle */
+  .task-type-toggle > * {
     min-width: 100px;
+  }
+
+  .task-title {
+    max-width: 75%; /* More space for title with fewer buttons */
+    font-size: 0.95rem; /* Slightly smaller font on mobile */
+  }
+
+  .task-action-btn {
+    min-width: 48px !important; /* Even larger touch targets on mobile */
+    min-height: 48px !important;
+  }
+
+  .task-actions {
+    padding: 6px 0; /* More padding on mobile */
+  }
+
+  /* Ensure task info chips are readable on mobile */
+  .task-info > * {
+    margin-bottom: 4px;
   }
 }
 </style>
