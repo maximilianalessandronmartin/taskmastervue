@@ -1,7 +1,13 @@
-import { defineStore } from 'pinia';
+import {defineStore} from 'pinia';
 import taskService from '../services/task.service';
-import { type CreateTaskDto, type ShareTaskDto, type TaskDto, type TimerUpdateDto, type UpdateTaskDto } from '../types/models';
-import { useAuthStore } from './auth.store';
+import {
+  type CreateTaskDto,
+  type ShareTaskDto,
+  type TaskDto,
+  type TimerUpdateDto,
+  type UpdateTaskDto
+} from '../types/models';
+import {useAuthStore} from './auth.store';
 
 interface TaskState {
   tasks: TaskDto[];
@@ -20,8 +26,7 @@ async function handleApiCall<T>(
   storeInstance.error = null;
 
   try {
-    const result = await apiCall();
-    return result;
+    return await apiCall();
   } catch (error: any) {
     storeInstance.error = error.response?.data?.message || 'An error occurred';
     throw error;
@@ -127,7 +132,7 @@ export const useTaskStore = defineStore('task', {
 
     async fetchSharedTasks() {
       return handleApiCall(this, async () => {
-        const tasks = await taskService.getSharedTasks();
+        const tasks = await taskService.getAllTasks('shared');
         this.sharedTasks = tasks;
         return tasks;
       });
