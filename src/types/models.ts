@@ -123,6 +123,17 @@ export interface Friendship {
   status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'BLOCKED';
 }
 
+// Notification related interfaces
+export interface Notification {
+  id: string;
+  recipient: User;
+  type: 'FRIEND_REQUEST' | 'FRIEND_REQUEST_ACCEPTED' | 'ACHIEVEMENT_UNLOCKED' | 'TASK_SHARED' | 'TASK_COMPLETED';
+  message: string;
+  payload: string;
+  read: boolean;
+  createdAt: string;
+}
+
 // Error related interfaces
 export interface ErrorMessage {
   statusCode: number;

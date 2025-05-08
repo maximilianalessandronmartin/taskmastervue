@@ -1,7 +1,8 @@
 <script lang="ts" setup>
-import {ref, onMounted, computed, watch} from 'vue';
+import {ref, onMounted, computed, watch, onUnmounted} from 'vue';
 import {useTaskStore} from '../store/task.store';
 import {useFriendshipStore} from '../store/friendship.store';
+import websocketService from '../services/websocket.service';
 
 import {
   type CreateTaskDto,
@@ -29,6 +30,7 @@ const activeTab = ref('details'); // Default to details tab
 const pomodoroMinutes = ref(25); // Default 25 minutes
 const timerCountdown = ref(0);
 const timerInterval = ref<number | null>(null);
+const timerSubscription = ref<{ unsubscribe: () => void } | null>(null);
 
 
 // Task form data
@@ -285,6 +287,31 @@ const openTaskDetailsDialog = (task: TaskDto) => {
     timerCountdown.value = 0;
   }
 
+  // Unsubscribe from any existing timer subscription
+  if (timerSubscription.value) {
+    timerSubscription.value.unsubscribe();
+    timerSubscription.value = null;
+  }
+
+  // Subscribe to timer updates for this task
+  timerSubscription.value = websocketService.subscribeToTaskTimer(task.id, (timerUpdate: TimerUpdateDto) => {
+    // Update the timer countdown
+    timerCountdown.value = timerUpdate.remainingTimeSeconds;
+
+    // Start or stop the timer interval based on the timer active state
+    if (timerUpdate.timerActive && !timerInterval.value) {
+      startTimerInterval();
+    } else if (!timerUpdate.timerActive && timerInterval.value) {
+      stopTimerInterval();
+    }
+
+    // Update the task's timer state
+    if (selectedTask.value && selectedTask.value.id === task.id) {
+      selectedTask.value.remainingTimeSeconds = timerUpdate.remainingTimeSeconds;
+      selectedTask.value.timerActive = timerUpdate.timerActive;
+    }
+  });
+
   // Start timer interval if timer is active
   if (task.timerActive) {
     startTimerInterval();
@@ -371,16 +398,6 @@ const startTimerInterval = () => {
   timerInterval.value = window.setInterval(() => {
     if (timerCountdown.value > 0) {
       timerCountdown.value--;
-
-      // Update the server every 10 seconds to keep track of remaining time
-      if (timerCountdown.value % 10 === 0 && selectedTask.value) {
-        taskStore.updateTimer(selectedTask.value.id, {
-          remainingTimeSeconds: timerCountdown.value,
-          timerActive: true
-        }).catch(error => {
-          console.error('Failed to update timer:', error);
-        });
-      }
     } else {
       // Timer reached zero
       stopTimerInterval();
@@ -454,10 +471,16 @@ watch(taskTypeFilter, (_) => {
   fetchTasks();
 });
 
-// Watch for dialog close to clean up timer interval
+// Watch for dialog close to clean up timer interval and subscription
 watch(detailsDialog, (isOpen) => {
   if (!isOpen) {
     stopTimerInterval();
+
+    // Unsubscribe from timer updates
+    if (timerSubscription.value) {
+      timerSubscription.value.unsubscribe();
+      timerSubscription.value = null;
+    }
   }
 });
 
@@ -466,6 +489,18 @@ onMounted(() => {
   // Initialize with the default filter (all)
   taskTypeFilter.value = 'all';
   fetchTasks();
+});
+
+// Clean up when component is unmounted
+onUnmounted(() => {
+  // Stop any active timer interval
+  stopTimerInterval();
+
+  // Unsubscribe from timer updates
+  if (timerSubscription.value) {
+    timerSubscription.value.unsubscribe();
+    timerSubscription.value = null;
+  }
 });
 </script>
 

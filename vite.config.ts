@@ -8,6 +8,10 @@ export default defineConfig({
     vue(),
     vuetify({ autoImport: true }),
   ],
+  // Define global to fix "global is not defined" error in sockjs-client
+  define: {
+    global: 'window',
+  },
   // Fügen Sie optimizeDeps hinzu, um Probleme mit der Komponenteninitialisierung zu beheben
   optimizeDeps: {
     include: [

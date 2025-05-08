@@ -2,6 +2,7 @@
 import { onMounted, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../store/auth.store';
+import NotificationIcon from '../components/NotificationIcon.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -47,6 +48,7 @@ onMounted(async () => {
       <v-chip v-if="authStore.user" class="mr-2">
         XP: {{ authStore.user.xp }}
       </v-chip>
+      <NotificationIcon v-if="authStore.user" />
     </v-app-bar>
 
     <div class="content-container">
