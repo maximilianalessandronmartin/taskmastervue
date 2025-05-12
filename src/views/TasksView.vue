@@ -1,13 +1,13 @@
 <script lang="ts" setup>
 import {ref, onMounted, computed, watch, onUnmounted} from 'vue';
 import {useTaskStore} from '../store/task.store';
-import {useFriendshipStore} from '../store/friendship.store';
-import websocketService from '../services/websocket.service';
+import timerService from '../services/timer.service';
+import taskSharingService from '../services/task-sharing.service';
+import { formatDate, formatTime, formatTimeDisplay, getUrgencyColor } from '../utils/formatters';
 
 import {
   type CreateTaskDto,
-  type Friendship,
-  type TaskDto, type TimerUpdateDto,
+  type TaskDto,
   type UpdateTaskDto
 } from '../types/models';
 
@@ -21,12 +21,10 @@ import TaskShareDialog from '../components/TaskShareDialog.vue';
 import TaskDetailsDialog from '../components/TaskDetailsDialog.vue';
 
 const taskStore = useTaskStore();
-const friendshipStore = useFriendshipStore();
 
 // Share task dialog
 const shareDialog = ref(false);
 const currentTask = ref<TaskDto | null>(null);
-const friendships = ref<Friendship[]>([]);
 
 // Task details dialog
 const detailsDialog = ref(false);
@@ -34,13 +32,6 @@ const selectedTask = ref<TaskDto | null>(null);
 
 // Pomodoro timer
 const timerCountdown = ref(0);
-const timerInterval = ref<number | null>(null);
-const timerSubscription = ref<{ unsubscribe: () => void } | null>(null);
-const currentSubscriptionTaskId = ref<string | null>(null);
-// Map to track active timers and their remaining time
-const activeTimers = ref<Map<string, { remainingTimeMillis: number, timerActive: boolean }>>(new Map());
-// Interval for updating active timers in the background
-const backgroundTimerInterval = ref<number | null>(null);
 
 
 // Task form data
@@ -109,14 +100,12 @@ const filteredTasks = computed(() => {
 
 // Check if a task has an active timer
 const hasActiveTimer = (taskId: string) => {
-  const timerInfo = activeTimers.value.get(taskId);
-  return timerInfo && timerInfo.timerActive;
+  return timerService.hasActiveTimer(taskId);
 };
 
 // Get the remaining time for a task
 const getTaskRemainingTime = (taskId: string) => {
-  const timerInfo = activeTimers.value.get(taskId);
-  return timerInfo ? timerInfo.remainingTimeMillis : 0;
+  return timerService.getTaskRemainingTime(taskId);
 };
 
 // Methods
@@ -130,16 +119,9 @@ const fetchTasks = async () => {
       await taskStore.fetchAllTasks(taskTypeFilter.value === 'all' ? undefined : taskTypeFilter.value);
     }
 
-    // Update activeTimers map with any tasks that have active timers
+    // Initialize timers with the fetched tasks
     const allTasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
-    allTasks.forEach(task => {
-      if (task.pomodoroTimeMillis) {
-        activeTimers.value.set(task.id, {
-          remainingTimeMillis: task.remainingTimeMillis || task.pomodoroTimeMillis,
-          timerActive: task.timerActive || false
-        });
-      }
-    });
+    timerService.initializeTimers(allTasks);
   } catch (error) {
     console.error('Failed to fetch tasks:', error);
   } finally {
@@ -148,14 +130,10 @@ const fetchTasks = async () => {
 };
 
 const fetchFriends = async () => {
-  loading.value = true;
   try {
-    await friendshipStore.fetchFriends();
-    friendships.value = friendshipStore.getFriends;
+    await taskSharingService.fetchFriends();
   } catch (error) {
     console.error('Failed to fetch friends:', error);
-  } finally {
-    loading.value = false;
   }
 };
 
@@ -284,67 +262,24 @@ const openTaskDetailsDialog = (task: TaskDto) => {
 
   // Initialize timer countdown if task has pomodoro time
   if (selectedTask.value?.pomodoroTimeMillis) {
-    // Use the value from activeTimers if available, otherwise use the task's value
-    const activeTimer = activeTimers.value.get(selectedTask.value.id);
-    if (activeTimer) {
-      timerCountdown.value = activeTimer.remainingTimeMillis;
-    } else {
-      timerCountdown.value = selectedTask.value.remainingTimeMillis || selectedTask.value.pomodoroTimeMillis;
-      // Add to active timers map
-      activeTimers.value.set(selectedTask.value.id, {
-        remainingTimeMillis: timerCountdown.value,
-        timerActive: selectedTask.value.timerActive || false
-      });
-    }
+    // Get the remaining time from the timer service
+    timerCountdown.value = timerService.getTaskRemainingTime(selectedTask.value.id);
   } else {
     timerCountdown.value = 0;
   }
 
-  // Check if we need to create a new subscription
-  // We need a new subscription if:
-  // 1. We don't have a subscription yet, or
-  // 2. The current subscription is for a different task
-  if (!timerSubscription.value || currentSubscriptionTaskId.value !== selectedTask.value?.id) {
-    // Unsubscribe from any existing timer subscription
-    if (timerSubscription.value) {
-      timerSubscription.value.unsubscribe();
-      timerSubscription.value = null;
-    }
+  // Subscribe to timer updates for this task
+  if (selectedTask.value) {
+    timerService.subscribeToTaskTimer(selectedTask.value.id, (timerUpdate) => {
+      // Update the timer countdown
+      timerCountdown.value = timerUpdate.remainingTimeMillis;
 
-    // Subscribe to timer updates for this task
-    if (selectedTask.value) {
-      timerSubscription.value = websocketService.subscribeToTaskTimer(selectedTask.value.id, (timerUpdate: TimerUpdateDto) => {
-        // Update the timer countdown
-        timerCountdown.value = timerUpdate.remainingTimeMillis;
-
-        // Update the active timers map
-        activeTimers.value.set(selectedTask.value!.id, {
-          remainingTimeMillis: timerUpdate.remainingTimeMillis,
-          timerActive: timerUpdate.timerActive
-        });
-
-        // Start or stop the timer interval based on the timer active state
-        if (timerUpdate.timerActive && !timerInterval.value && detailsDialog.value) {
-          startTimerInterval();
-        } else if (!timerUpdate.timerActive && timerInterval.value) {
-          stopTimerInterval();
-        }
-
-        // Update the task's timer state
-        if (selectedTask.value && selectedTask.value.id === task.id) {
-          selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
-          selectedTask.value.timerActive = timerUpdate.timerActive;
-        }
-      });
-
-      // Update the current subscription task ID
-      currentSubscriptionTaskId.value = selectedTask.value.id;
-    }
-  }
-
-  // Start timer interval if timer is active and not already running
-  if (selectedTask.value?.timerActive && !timerInterval.value) {
-    startTimerInterval();
+      // Update the task's timer state
+      if (selectedTask.value) {
+        selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
+        selectedTask.value.timerActive = timerUpdate.timerActive;
+      }
+    });
   }
 };
 
@@ -352,83 +287,25 @@ const openTaskDetailsDialog = (task: TaskDto) => {
 const updatePomodoroTime = async (minutes: number) => {
   if (!selectedTask.value || !minutes) return;
 
-  const millis = Math.max(0, Math.min(60, minutes)) * 60 * 1000; // Convert minutes to milliseconds
-  console.log('Updating pomodoro time to', millis, 'ms');
-
   try {
-    loading.value = true;
-    const timerData: TimerUpdateDto = {
-      remainingTimeMillis: millis,
-      timerActive: false
-    };
-
-    await taskStore.updateTimer(selectedTask.value.id, timerData);
-    timerCountdown.value = millis;
-
-    // Update the active timers map
-    activeTimers.value.set(selectedTask.value.id, {
-      remainingTimeMillis: millis,
-      timerActive: false
-    });
+    const updatedTask = await timerService.updatePomodoroTime(selectedTask.value.id, minutes);
+    if (selectedTask.value) {
+      selectedTask.value = updatedTask;
+      timerCountdown.value = updatedTask.pomodoroTimeMillis || 0;
+    }
   } catch (error) {
     console.error('Failed to update pomodoro time:', error);
-  } finally {
-    loading.value = false;
   }
 };
 
 const startTimer = async (taskId: string) => {
   try {
     loading.value = true;
-    const updatedTask = await taskStore.startTimer(taskId);
+    const updatedTask = await timerService.startTimer(taskId);
     if (selectedTask.value && selectedTask.value.id === taskId) {
       selectedTask.value = updatedTask;
-
-      // Update the active timers map
-      if (updatedTask.pomodoroTimeMillis) {
-        activeTimers.value.set(taskId, {
-          remainingTimeMillis: updatedTask.remainingTimeMillis || updatedTask.pomodoroTimeMillis,
-          timerActive: true
-        });
-      }
+      timerCountdown.value = updatedTask.remainingTimeMillis || updatedTask.pomodoroTimeMillis || 0;
     }
-
-    // Subscribe to timer updates when starting a timer
-    if (!timerSubscription.value || currentSubscriptionTaskId.value !== taskId) {
-      // Unsubscribe from any existing timer subscription
-      if (timerSubscription.value) {
-        timerSubscription.value.unsubscribe();
-        timerSubscription.value = null;
-      }
-
-      // Subscribe to timer updates for this task
-      timerSubscription.value = websocketService.subscribeToTaskTimer(taskId, (timerUpdate: TimerUpdateDto) => {
-        // Update the active timers map
-        activeTimers.value.set(taskId, {
-          remainingTimeMillis: timerUpdate.remainingTimeMillis,
-          timerActive: timerUpdate.timerActive
-        });
-
-        // Update the timer countdown if this is the selected task
-        if (selectedTask.value && selectedTask.value.id === taskId) {
-          timerCountdown.value = timerUpdate.remainingTimeMillis;
-          selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
-          selectedTask.value.timerActive = timerUpdate.timerActive;
-
-          // Start or stop the timer interval based on the timer active state
-          if (timerUpdate.timerActive && !timerInterval.value && detailsDialog.value) {
-            startTimerInterval();
-          } else if (!timerUpdate.timerActive && timerInterval.value) {
-            stopTimerInterval();
-          }
-        }
-      });
-
-      // Update the current subscription task ID
-      currentSubscriptionTaskId.value = taskId;
-    }
-
-    startTimerInterval();
   } catch (error) {
     console.error('Failed to start timer:', error);
   } finally {
@@ -439,23 +316,11 @@ const startTimer = async (taskId: string) => {
 const pauseTimer = async (taskId: string) => {
   try {
     loading.value = true;
-    const updatedTask = await taskStore.pauseTimer(taskId);
+    const updatedTask = await timerService.pauseTimer(taskId);
     if (selectedTask.value && selectedTask.value.id === taskId) {
       selectedTask.value = updatedTask;
-
-      // Update the active timers map
-      if (updatedTask.pomodoroTimeMillis) {
-        activeTimers.value.set(taskId, {
-          remainingTimeMillis: updatedTask.remainingTimeMillis || timerCountdown.value,
-          timerActive: false
-        });
-      }
+      timerCountdown.value = updatedTask.remainingTimeMillis || 0;
     }
-
-    // Keep the subscription active even when pausing a timer
-    // This ensures we continue to receive updates if the timer is started again (by us or another user)
-
-    stopTimerInterval();
   } catch (error) {
     console.error('Failed to pause timer:', error);
   } finally {
@@ -466,26 +331,11 @@ const pauseTimer = async (taskId: string) => {
 const resetTimer = async (taskId: string) => {
   try {
     loading.value = true;
-    const updatedTask = await taskStore.resetTimer(taskId);
+    const updatedTask = await timerService.resetTimer(taskId);
     if (selectedTask.value && selectedTask.value.id === taskId) {
       selectedTask.value = updatedTask;
-
-      // Reset the countdown to the full pomodoro time
-      if (selectedTask.value.pomodoroTimeMillis) {
-        timerCountdown.value = selectedTask.value.pomodoroTimeMillis;
-
-        // Update the active timers map
-        activeTimers.value.set(taskId, {
-          remainingTimeMillis: selectedTask.value.pomodoroTimeMillis,
-          timerActive: false
-        });
-      }
+      timerCountdown.value = updatedTask.pomodoroTimeMillis || 0;
     }
-
-    // Keep the subscription active even when resetting a timer
-    // This ensures we continue to receive updates if the timer is started again (by us or another user)
-
-    stopTimerInterval();
   } catch (error) {
     console.error('Failed to reset timer:', error);
   } finally {
@@ -493,68 +343,15 @@ const resetTimer = async (taskId: string) => {
   }
 };
 
-const startTimerInterval = () => {
-  // Clear any existing interval
-  stopTimerInterval();
-
-  // Start a new interval that decrements the countdown every 100 milliseconds
-  // but only if the timer is active
-  timerInterval.value = window.setInterval(() => {
-    // Only decrement the countdown if the timer is active
-    if (selectedTask.value && selectedTask.value.timerActive && timerCountdown.value > 0) {
-      // Decrement by 100 milliseconds
-      timerCountdown.value = Math.max(0, timerCountdown.value - 100);
-
-      // Update the active timers map
-      if (selectedTask.value.pomodoroTimeMillis) {
-        activeTimers.value.set(selectedTask.value.id, {
-          remainingTimeMillis: timerCountdown.value,
-          timerActive: true
-        });
-      }
-    } else if (timerCountdown.value <= 0) {
-      // Timer reached zero
-      stopTimerInterval();
-      if (selectedTask.value) {
-        taskStore.pauseTimer(selectedTask.value.id).catch(error => {
-          console.error('Failed to pause timer at completion:', error);
-        });
-
-        // Update the active timers map
-        if (selectedTask.value.pomodoroTimeMillis) {
-          activeTimers.value.set(selectedTask.value.id, {
-            remainingTimeMillis: 0,
-            timerActive: false
-          });
-        }
-      }
-    }
-  }, 100); // Run every 100 milliseconds for smoother updates
-};
-
-const stopTimerInterval = () => {
-  if (timerInterval.value !== null) {
-    clearInterval(timerInterval.value);
-    timerInterval.value = null;
-
-    // Update the active timers map if a task is selected
-    if (selectedTask.value && selectedTask.value.pomodoroTimeMillis) {
-      activeTimers.value.set(selectedTask.value.id, {
-        remainingTimeMillis: timerCountdown.value,
-        timerActive: selectedTask.value.timerActive || false
-      });
-    }
-  }
-};
+// Timer interval methods have been moved to the timer service
 
 const shareTask = async (username: string) => {
   if (!username || !currentTask.value) {
     return;
   }
 
-  loading.value = true;
   try {
-    await taskStore.shareTask(currentTask.value.id, username);
+    await taskSharingService.shareTask(currentTask.value.id, username);
 
     // Update the currentTask after sharing
     if (currentTask.value) {
@@ -566,15 +363,12 @@ const shareTask = async (username: string) => {
     }
   } catch (error) {
     console.error('Failed to share task:', error);
-  } finally {
-    loading.value = false;
   }
 };
 
 const unshareTask = async (taskId: string, username: string) => {
-  loading.value = true;
   try {
-    await taskStore.unshareTask(taskId, username);
+    await taskSharingService.unshareTask(taskId, username);
 
     // Update the currentTask if it's the one being unshared
     if (currentTask.value && currentTask.value.id === taskId) {
@@ -586,8 +380,6 @@ const unshareTask = async (taskId: string, username: string) => {
     }
   } catch (error) {
     console.error('Failed to unshare task:', error);
-  } finally {
-    loading.value = false;
   }
 };
 
@@ -598,136 +390,25 @@ watch(taskTypeFilter, (_) => {
 
 // Watch for dialog close
 watch(detailsDialog, (isOpen) => {
-  if (!isOpen) {
-    // Stop the timer interval but don't unsubscribe from timer updates
-    // This allows the timer to continue running in the background
-    // but prevents unnecessary UI updates when the dialog is closed
-    stopTimerInterval();
-
-    // Save the current timer state to the activeTimers map
-    if (selectedTask.value && selectedTask.value.pomodoroTimeMillis) {
-      activeTimers.value.set(selectedTask.value.id, {
-        remainingTimeMillis: timerCountdown.value,
-        timerActive: selectedTask.value.timerActive || false
-      });
-    }
-
-    console.log('Detail dialog closed, timer continues in background');
-  } else if (selectedTask.value?.timerActive) {
-    // If reopening the dialog and the timer is active, restart the interval
-    startTimerInterval();
+  if (!isOpen && selectedTask.value) {
+    // When dialog is closed, unsubscribe from timer updates for the selected task
+    // This prevents multiple subscriptions when the dialog is opened and closed multiple times
+    timerService.unsubscribeFromTask(selectedTask.value.id);
+    console.log('Detail dialog closed, unsubscribed from timer updates');
   }
 });
-
-// Background timer methods
-const startBackgroundTimerInterval = () => {
-  // Clear any existing background interval
-  stopBackgroundTimerInterval();
-
-  // Start a new interval that decrements active timers every 100 milliseconds
-  backgroundTimerInterval.value = window.setInterval(() => {
-    // Update each active timer
-    activeTimers.value.forEach((timer, taskId) => {
-      if (timer.timerActive && timer.remainingTimeMillis > 0) {
-        // Decrement the timer by 100 milliseconds
-        timer.remainingTimeMillis = Math.max(0, timer.remainingTimeMillis - 100);
-
-        // Update the map
-        activeTimers.value.set(taskId, timer);
-
-        // If the timer reaches zero, mark it as inactive
-        if (timer.remainingTimeMillis <= 0) {
-          timer.timerActive = false;
-          activeTimers.value.set(taskId, timer);
-
-          // Notify the backend that the timer has completed
-          taskStore.pauseTimer(taskId).catch(error => {
-            console.error('Failed to pause timer at completion:', error);
-          });
-        }
-      }
-    });
-  }, 100); // Run every 100 milliseconds for smoother updates
-};
-
-const stopBackgroundTimerInterval = () => {
-  if (backgroundTimerInterval.value !== null) {
-    clearInterval(backgroundTimerInterval.value);
-    backgroundTimerInterval.value = null;
-  }
-};
 
 // Lifecycle hooks
 onMounted(() => {
   // Initialize with the default filter (all)
   taskTypeFilter.value = 'all';
-  fetchTasks().then(() => {
-    // Subscribe to active timers when reopening the app
-    const allTasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
-    const activeTimerTasks = allTasks.filter(task => task.timerActive && task.pomodoroTimeMillis);
-
-    console.log(`Found ${activeTimerTasks.length} active timers to subscribe to`);
-
-    // Subscribe to each active timer
-    activeTimerTasks.forEach(task => {
-      // Only subscribe if we're not already subscribed to this task
-      if (!timerSubscription.value || currentSubscriptionTaskId.value !== task.id) {
-        const subscription = websocketService.subscribeToTaskTimer(task.id, (timerUpdate: TimerUpdateDto) => {
-          // Update the active timers map
-          activeTimers.value.set(task.id, {
-            remainingTimeMillis: timerUpdate.remainingTimeMillis,
-            timerActive: timerUpdate.timerActive
-          });
-
-          // Update the task in the store if it's the selected task
-          if (selectedTask.value && selectedTask.value.id === task.id) {
-            selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
-            selectedTask.value.timerActive = timerUpdate.timerActive;
-            timerCountdown.value = timerUpdate.remainingTimeMillis;
-
-            // Start or stop the timer interval based on the timer active state
-            if (timerUpdate.timerActive && !timerInterval.value && detailsDialog.value) {
-              startTimerInterval();
-            } else if (!timerUpdate.timerActive && timerInterval.value) {
-              stopTimerInterval();
-            }
-          }
-        });
-
-        // Store the subscription for the most recently active timer
-        if (!timerSubscription.value) {
-          timerSubscription.value = subscription;
-          currentSubscriptionTaskId.value = task.id;
-        }
-      }
-    });
-  });
-
-  // Start the background timer interval
-  startBackgroundTimerInterval();
+  fetchTasks();
 });
 
 // Clean up when component is unmounted
 onUnmounted(() => {
-  // Stop the timer intervals
-  stopTimerInterval();
-  stopBackgroundTimerInterval();
-
-  // Unsubscribe from timer updates when component is unmounted
-  // This prevents memory leaks and unnecessary network traffic
-  if (timerSubscription.value) {
-    timerSubscription.value.unsubscribe();
-    timerSubscription.value = null;
-    currentSubscriptionTaskId.value = null;
-  }
-
-  // Save the current timer state if a task is selected
-  if (selectedTask.value && selectedTask.value.pomodoroTimeMillis) {
-    activeTimers.value.set(selectedTask.value.id, {
-      remainingTimeMillis: timerCountdown.value,
-      timerActive: selectedTask.value.timerActive || false
-    });
-  }
+  // Clean up timer service resources
+  timerService.cleanup();
 
   console.log('Component unmounted, timer subscriptions cleaned up');
 });
@@ -781,8 +462,8 @@ onUnmounted(() => {
     <TaskShareDialog
       v-model="shareDialog"
       :task="currentTask"
-      :friendships="friendships"
-      :loading="loading"
+      :friendships="taskSharingService.getFriendships().value"
+      :loading="taskSharingService.getLoading().value"
       @share="shareTask"
       @unshare="unshareTask"
       @fetch-friends="fetchFriends"
