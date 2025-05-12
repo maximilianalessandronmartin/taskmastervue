@@ -19,6 +19,16 @@ export const userService = {
   getAllUsers(): Promise<User[]> {
     return apiService.get<User[]>('/users/all')
       .then(response => response.data);
+  },
+
+  /**
+   * Update the user's notification preferences
+   * @param {boolean} enabled - Whether notifications should be enabled
+   * @returns Promise with the updated user data
+   */
+  updateNotificationPreferences(enabled: boolean): Promise<UserDto> {
+    return apiService.post<UserDto>('/users/preferences/notifications', { enabled })
+      .then(response => response.data);
   }
 };
 

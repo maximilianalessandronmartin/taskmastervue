@@ -7,7 +7,11 @@ const notificationStore = useNotificationStore();
 const showNotifications = ref(false);
 
 // Compute the number of unread notifications
-const unreadCount = computed(() => notificationStore.unreadCount);
+const unreadCount = computed(() => {
+  const count = notificationStore.unreadCount;
+  console.log('Computing unread count:', count);
+  return count;
+});
 
 // Toggle the notification drawer
 const toggleNotifications = () => {
@@ -22,8 +26,15 @@ const closeNotifications = () => {
 };
 
 // Initialize the notification system when the component is mounted
+// This is a fallback in case the auth store didn't initialize it
 onMounted(async () => {
-  await notificationStore.initialize();
+  // Only initialize if not already initialized
+  if (!notificationStore.isInitialized) {
+    console.log('NotificationIcon: Notification store not initialized, initializing now');
+    await notificationStore.initialize();
+  } else {
+    console.log('NotificationIcon: Notification store already initialized, skipping');
+  }
 });
 
 // Disconnect from WebSocket when the component is unmounted
@@ -51,6 +62,7 @@ onUnmounted(() => {
       </v-btn>
     </v-badge>
 
+    <!-- Notification List -->
     <NotificationList
       :show="showNotifications"
       @close="closeNotifications"

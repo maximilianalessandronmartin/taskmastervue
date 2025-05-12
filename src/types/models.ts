@@ -20,7 +20,9 @@ export interface UserDto {
   firstname: string;
   lastname: string;
   username: string;
+  email: string;
   xp: number;
+  notificationsEnabled?: boolean;
 }
 
 export interface RegisterUserDto {
@@ -63,8 +65,8 @@ export interface TaskDto {
   visibility?: 'PRIVATE' | 'SHARED';
   sharedWith?: UserDto[];
   owner?: boolean;
-  pomodoroTimeSeconds?: number;
-  remainingTimeSeconds?: number;
+  pomodoroTimeMillis?: number;
+  remainingTimeMillis?: number;
   lastTimerUpdateTimestamp?: string;
   timerActive?: boolean;
 }
@@ -89,7 +91,7 @@ export interface ShareTaskDto {
 }
 
 export interface TimerUpdateDto {
-  remainingTimeSeconds: number;
+  remainingTimeMillis: number;
   timerActive: boolean;
 }
 
@@ -124,6 +126,16 @@ export interface Friendship {
 }
 
 // Notification related interfaces
+export interface NotificationDto {
+  id: string;
+  recipient: UserDto;
+  type: 'FRIEND_REQUEST' | 'FRIEND_REQUEST_ACCEPTED' | 'ACHIEVEMENT_UNLOCKED' | 'TASK_SHARED' | 'TASK_COMPLETED';
+  message: string;
+  payload: string;
+  read: boolean;
+  createdAt: string;
+}
+
 export interface Notification {
   id: string;
   recipient: User;

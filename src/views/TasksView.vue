@@ -11,42 +11,48 @@ import {
   type UpdateTaskDto
 } from '../types/models';
 
+// Import components
+import TaskTypeSelector from '../components/TaskTypeSelector.vue';
+import TaskSearchField from '../components/TaskSearchField.vue';
+import TaskFilterPanel from '../components/TaskFilterPanel.vue';
+import TaskList from '../components/TaskList.vue';
+import TaskFormDialog from '../components/TaskFormDialog.vue';
+import TaskShareDialog from '../components/TaskShareDialog.vue';
+import TaskDetailsDialog from '../components/TaskDetailsDialog.vue';
+
 const taskStore = useTaskStore();
 const friendshipStore = useFriendshipStore();
 
 // Share task dialog
 const shareDialog = ref(false);
-const shareTaskId = ref('');
-const shareUsername = ref('');
 const currentTask = ref<TaskDto | null>(null);
 const friendships = ref<Friendship[]>([]);
 
 // Task details dialog
 const detailsDialog = ref(false);
 const selectedTask = ref<TaskDto | null>(null);
-const activeTab = ref('details'); // Default to details tab
 
 // Pomodoro timer
-const pomodoroMinutes = ref(25); // Default 25 minutes
 const timerCountdown = ref(0);
 const timerInterval = ref<number | null>(null);
 const timerSubscription = ref<{ unsubscribe: () => void } | null>(null);
+const currentSubscriptionTaskId = ref<string | null>(null);
+// Map to track active timers and their remaining time
+const activeTimers = ref<Map<string, { remainingTimeMillis: number, timerActive: boolean }>>(new Map());
+// Interval for updating active timers in the background
+const backgroundTimerInterval = ref<number | null>(null);
 
 
 // Task form data
 const taskDialog = ref(false);
 const isEditMode = ref(false);
 const currentTaskId = ref('');
-const showAdvancedOptions = ref(false);
 const taskForm = ref<CreateTaskDto>({
   name: '',
   description: '',
   dueDate: '',
   urgency: 'MEDIUM'
 });
-// Separate date and time for better UX
-const taskDate = ref('');
-const taskTime = ref('');
 
 // Task filter
 const showCompleted = ref(false);
@@ -101,6 +107,18 @@ const filteredTasks = computed(() => {
   });
 });
 
+// Check if a task has an active timer
+const hasActiveTimer = (taskId: string) => {
+  const timerInfo = activeTimers.value.get(taskId);
+  return timerInfo && timerInfo.timerActive;
+};
+
+// Get the remaining time for a task
+const getTaskRemainingTime = (taskId: string) => {
+  const timerInfo = activeTimers.value.get(taskId);
+  return timerInfo ? timerInfo.remainingTimeMillis : 0;
+};
+
 // Methods
 const fetchTasks = async () => {
   loading.value = true;
@@ -111,6 +129,17 @@ const fetchTasks = async () => {
       // For 'owned' or 'all', use fetchAllTasks with appropriate type
       await taskStore.fetchAllTasks(taskTypeFilter.value === 'all' ? undefined : taskTypeFilter.value);
     }
+
+    // Update activeTimers map with any tasks that have active timers
+    const allTasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
+    allTasks.forEach(task => {
+      if (task.pomodoroTimeMillis) {
+        activeTimers.value.set(task.id, {
+          remainingTimeMillis: task.remainingTimeMillis || task.pomodoroTimeMillis,
+          timerActive: task.timerActive || false
+        });
+      }
+    });
   } catch (error) {
     console.error('Failed to fetch tasks:', error);
   } finally {
@@ -138,11 +167,6 @@ const openCreateTaskDialog = () => {
     dueDate: '',
     urgency: 'MEDIUM'
   };
-  // Reset date and time fields
-  taskDate.value = '';
-  taskTime.value = '';
-  // Hide advanced options by default for new tasks
-  showAdvancedOptions.value = false;
   taskDialog.value = true;
 };
 
@@ -150,19 +174,12 @@ const openEditTaskDialog = (task: TaskDto) => {
   isEditMode.value = true;
   currentTaskId.value = task.id;
 
-  // Format the date for date and time inputs if it exists
+  // Format the date for inputs if it exists
   let formattedDueDate = '';
   if (task.dueDate) {
     // Create a date object and format it to YYYY-MM-DDThh:mm
     const date = new Date(task.dueDate);
     formattedDueDate = date.toISOString().slice(0, 16); // Format as YYYY-MM-DDThh:mm
-
-    // Split into date and time components
-    taskDate.value = formattedDueDate.split('T')[0]; // YYYY-MM-DD
-    taskTime.value = formattedDueDate.split('T')[1]; // hh:mm
-  } else {
-    taskDate.value = '';
-    taskTime.value = '';
   }
 
   taskForm.value = {
@@ -171,34 +188,21 @@ const openEditTaskDialog = (task: TaskDto) => {
     dueDate: formattedDueDate,
     urgency: task.urgency
   };
-  // Always show advanced options when editing
-  showAdvancedOptions.value = true;
   taskDialog.value = true;
 };
 
-const saveTask = async () => {
-  if (!taskForm.value.name) {
+const saveTask = async (task: CreateTaskDto | UpdateTaskDto) => {
+  if (!task.name) {
     return;
   }
 
   loading.value = true;
 
   try {
-    // Combine date and time if both are provided
-    if (taskDate.value && taskTime.value) {
-      taskForm.value.dueDate = `${taskDate.value}T${taskTime.value}`;
-    } else if (taskDate.value) {
-      // If only date is provided, set time to start of day
-      taskForm.value.dueDate = `${taskDate.value}T00:00`;
-    } else {
-      // If no date is provided, clear the due date
-      taskForm.value.dueDate = '';
-    }
-
     if (isEditMode.value) {
-      await taskStore.updateTask(currentTaskId.value, taskForm.value as UpdateTaskDto);
+      await taskStore.updateTask(currentTaskId.value, task as UpdateTaskDto);
     } else {
-      await taskStore.createTask(taskForm.value);
+      await taskStore.createTask(task as CreateTaskDto);
     }
     taskDialog.value = false;
   } catch (error) {
@@ -246,11 +250,12 @@ const formatTime = (dateString: string) => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-// Format seconds to MM:SS display
-const formatTimeDisplay = (seconds: number) => {
-  if (seconds <= 0) return '00:00';
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
+// Format milliseconds to MM:SS display
+const formatTimeDisplay = (millis: number) => {
+  if (millis <= 0) return '00:00';
+  const totalSeconds = Math.floor(millis / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
@@ -268,8 +273,6 @@ const getUrgencyColor = (urgency: string) => {
 };
 
 const openShareDialog = (task: TaskDto) => {
-  shareTaskId.value = task.id;
-  shareUsername.value = '';
   currentTask.value = task;
   fetchFriends();
   shareDialog.value = true;
@@ -280,59 +283,93 @@ const openTaskDetailsDialog = (task: TaskDto) => {
   detailsDialog.value = true;
 
   // Initialize timer countdown if task has pomodoro time
-  if (task.pomodoroTimeSeconds) {
-    timerCountdown.value = task.remainingTimeSeconds || task.pomodoroTimeSeconds;
-    pomodoroMinutes.value = Math.floor(task.pomodoroTimeSeconds / 60);
+  if (selectedTask.value?.pomodoroTimeMillis) {
+    // Use the value from activeTimers if available, otherwise use the task's value
+    const activeTimer = activeTimers.value.get(selectedTask.value.id);
+    if (activeTimer) {
+      timerCountdown.value = activeTimer.remainingTimeMillis;
+    } else {
+      timerCountdown.value = selectedTask.value.remainingTimeMillis || selectedTask.value.pomodoroTimeMillis;
+      // Add to active timers map
+      activeTimers.value.set(selectedTask.value.id, {
+        remainingTimeMillis: timerCountdown.value,
+        timerActive: selectedTask.value.timerActive || false
+      });
+    }
   } else {
     timerCountdown.value = 0;
   }
 
-  // Unsubscribe from any existing timer subscription
-  if (timerSubscription.value) {
-    timerSubscription.value.unsubscribe();
-    timerSubscription.value = null;
+  // Check if we need to create a new subscription
+  // We need a new subscription if:
+  // 1. We don't have a subscription yet, or
+  // 2. The current subscription is for a different task
+  if (!timerSubscription.value || currentSubscriptionTaskId.value !== selectedTask.value?.id) {
+    // Unsubscribe from any existing timer subscription
+    if (timerSubscription.value) {
+      timerSubscription.value.unsubscribe();
+      timerSubscription.value = null;
+    }
+
+    // Subscribe to timer updates for this task
+    if (selectedTask.value) {
+      timerSubscription.value = websocketService.subscribeToTaskTimer(selectedTask.value.id, (timerUpdate: TimerUpdateDto) => {
+        // Update the timer countdown
+        timerCountdown.value = timerUpdate.remainingTimeMillis;
+
+        // Update the active timers map
+        activeTimers.value.set(selectedTask.value!.id, {
+          remainingTimeMillis: timerUpdate.remainingTimeMillis,
+          timerActive: timerUpdate.timerActive
+        });
+
+        // Start or stop the timer interval based on the timer active state
+        if (timerUpdate.timerActive && !timerInterval.value && detailsDialog.value) {
+          startTimerInterval();
+        } else if (!timerUpdate.timerActive && timerInterval.value) {
+          stopTimerInterval();
+        }
+
+        // Update the task's timer state
+        if (selectedTask.value && selectedTask.value.id === task.id) {
+          selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
+          selectedTask.value.timerActive = timerUpdate.timerActive;
+        }
+      });
+
+      // Update the current subscription task ID
+      currentSubscriptionTaskId.value = selectedTask.value.id;
+    }
   }
 
-  // Subscribe to timer updates for this task
-  timerSubscription.value = websocketService.subscribeToTaskTimer(task.id, (timerUpdate: TimerUpdateDto) => {
-    // Update the timer countdown
-    timerCountdown.value = timerUpdate.remainingTimeSeconds;
-
-    // Start or stop the timer interval based on the timer active state
-    if (timerUpdate.timerActive && !timerInterval.value) {
-      startTimerInterval();
-    } else if (!timerUpdate.timerActive && timerInterval.value) {
-      stopTimerInterval();
-    }
-
-    // Update the task's timer state
-    if (selectedTask.value && selectedTask.value.id === task.id) {
-      selectedTask.value.remainingTimeSeconds = timerUpdate.remainingTimeSeconds;
-      selectedTask.value.timerActive = timerUpdate.timerActive;
-    }
-  });
-
-  // Start timer interval if timer is active
-  if (task.timerActive) {
+  // Start timer interval if timer is active and not already running
+  if (selectedTask.value?.timerActive && !timerInterval.value) {
     startTimerInterval();
   }
 };
 
 // Timer methods
-const updatePomodoroTime = async () => {
-  if (!selectedTask.value || !pomodoroMinutes.value) return;
+const updatePomodoroTime = async (minutes: number) => {
+  if (!selectedTask.value || !minutes) return;
 
-  const seconds = Math.max(1, Math.min(60, pomodoroMinutes.value)) * 60;
+  const millis = Math.max(0, Math.min(60, minutes)) * 60 * 1000; // Convert minutes to milliseconds
+  console.log('Updating pomodoro time to', millis, 'ms');
 
   try {
     loading.value = true;
     const timerData: TimerUpdateDto = {
-      remainingTimeSeconds: seconds,
+      remainingTimeMillis: millis,
       timerActive: false
     };
 
     await taskStore.updateTimer(selectedTask.value.id, timerData);
-    timerCountdown.value = seconds;
+    timerCountdown.value = millis;
+
+    // Update the active timers map
+    activeTimers.value.set(selectedTask.value.id, {
+      remainingTimeMillis: millis,
+      timerActive: false
+    });
   } catch (error) {
     console.error('Failed to update pomodoro time:', error);
   } finally {
@@ -346,7 +383,51 @@ const startTimer = async (taskId: string) => {
     const updatedTask = await taskStore.startTimer(taskId);
     if (selectedTask.value && selectedTask.value.id === taskId) {
       selectedTask.value = updatedTask;
+
+      // Update the active timers map
+      if (updatedTask.pomodoroTimeMillis) {
+        activeTimers.value.set(taskId, {
+          remainingTimeMillis: updatedTask.remainingTimeMillis || updatedTask.pomodoroTimeMillis,
+          timerActive: true
+        });
+      }
     }
+
+    // Subscribe to timer updates when starting a timer
+    if (!timerSubscription.value || currentSubscriptionTaskId.value !== taskId) {
+      // Unsubscribe from any existing timer subscription
+      if (timerSubscription.value) {
+        timerSubscription.value.unsubscribe();
+        timerSubscription.value = null;
+      }
+
+      // Subscribe to timer updates for this task
+      timerSubscription.value = websocketService.subscribeToTaskTimer(taskId, (timerUpdate: TimerUpdateDto) => {
+        // Update the active timers map
+        activeTimers.value.set(taskId, {
+          remainingTimeMillis: timerUpdate.remainingTimeMillis,
+          timerActive: timerUpdate.timerActive
+        });
+
+        // Update the timer countdown if this is the selected task
+        if (selectedTask.value && selectedTask.value.id === taskId) {
+          timerCountdown.value = timerUpdate.remainingTimeMillis;
+          selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
+          selectedTask.value.timerActive = timerUpdate.timerActive;
+
+          // Start or stop the timer interval based on the timer active state
+          if (timerUpdate.timerActive && !timerInterval.value && detailsDialog.value) {
+            startTimerInterval();
+          } else if (!timerUpdate.timerActive && timerInterval.value) {
+            stopTimerInterval();
+          }
+        }
+      });
+
+      // Update the current subscription task ID
+      currentSubscriptionTaskId.value = taskId;
+    }
+
     startTimerInterval();
   } catch (error) {
     console.error('Failed to start timer:', error);
@@ -361,7 +442,19 @@ const pauseTimer = async (taskId: string) => {
     const updatedTask = await taskStore.pauseTimer(taskId);
     if (selectedTask.value && selectedTask.value.id === taskId) {
       selectedTask.value = updatedTask;
+
+      // Update the active timers map
+      if (updatedTask.pomodoroTimeMillis) {
+        activeTimers.value.set(taskId, {
+          remainingTimeMillis: updatedTask.remainingTimeMillis || timerCountdown.value,
+          timerActive: false
+        });
+      }
     }
+
+    // Keep the subscription active even when pausing a timer
+    // This ensures we continue to receive updates if the timer is started again (by us or another user)
+
     stopTimerInterval();
   } catch (error) {
     console.error('Failed to pause timer:', error);
@@ -378,10 +471,20 @@ const resetTimer = async (taskId: string) => {
       selectedTask.value = updatedTask;
 
       // Reset the countdown to the full pomodoro time
-      if (selectedTask.value.pomodoroTimeSeconds) {
-        timerCountdown.value = selectedTask.value.pomodoroTimeSeconds;
+      if (selectedTask.value.pomodoroTimeMillis) {
+        timerCountdown.value = selectedTask.value.pomodoroTimeMillis;
+
+        // Update the active timers map
+        activeTimers.value.set(taskId, {
+          remainingTimeMillis: selectedTask.value.pomodoroTimeMillis,
+          timerActive: false
+        });
       }
     }
+
+    // Keep the subscription active even when resetting a timer
+    // This ensures we continue to receive updates if the timer is started again (by us or another user)
+
     stopTimerInterval();
   } catch (error) {
     console.error('Failed to reset timer:', error);
@@ -394,51 +497,73 @@ const startTimerInterval = () => {
   // Clear any existing interval
   stopTimerInterval();
 
-  // Start a new interval that decrements the countdown every second
+  // Start a new interval that decrements the countdown every 100 milliseconds
+  // but only if the timer is active
   timerInterval.value = window.setInterval(() => {
-    if (timerCountdown.value > 0) {
-      timerCountdown.value--;
-    } else {
+    // Only decrement the countdown if the timer is active
+    if (selectedTask.value && selectedTask.value.timerActive && timerCountdown.value > 0) {
+      // Decrement by 100 milliseconds
+      timerCountdown.value = Math.max(0, timerCountdown.value - 100);
+
+      // Update the active timers map
+      if (selectedTask.value.pomodoroTimeMillis) {
+        activeTimers.value.set(selectedTask.value.id, {
+          remainingTimeMillis: timerCountdown.value,
+          timerActive: true
+        });
+      }
+    } else if (timerCountdown.value <= 0) {
       // Timer reached zero
       stopTimerInterval();
       if (selectedTask.value) {
         taskStore.pauseTimer(selectedTask.value.id).catch(error => {
           console.error('Failed to pause timer at completion:', error);
         });
+
+        // Update the active timers map
+        if (selectedTask.value.pomodoroTimeMillis) {
+          activeTimers.value.set(selectedTask.value.id, {
+            remainingTimeMillis: 0,
+            timerActive: false
+          });
+        }
       }
     }
-  }, 1000);
+  }, 100); // Run every 100 milliseconds for smoother updates
 };
 
 const stopTimerInterval = () => {
   if (timerInterval.value !== null) {
     clearInterval(timerInterval.value);
     timerInterval.value = null;
+
+    // Update the active timers map if a task is selected
+    if (selectedTask.value && selectedTask.value.pomodoroTimeMillis) {
+      activeTimers.value.set(selectedTask.value.id, {
+        remainingTimeMillis: timerCountdown.value,
+        timerActive: selectedTask.value.timerActive || false
+      });
+    }
   }
 };
 
-const shareTask = async () => {
-  // Überprüfen Sie, ob shareUsername.value einen Wert hat
-  if (!shareUsername.value || !shareTaskId.value) {
+const shareTask = async (username: string) => {
+  if (!username || !currentTask.value) {
     return;
   }
 
   loading.value = true;
   try {
-    // Nehmen wir an, dass shareUsername.value nun direkt den Benutzernamen enthält
-    await taskStore.shareTask(shareTaskId.value, shareUsername.value);
+    await taskStore.shareTask(currentTask.value.id, username);
 
     // Update the currentTask after sharing
-    if (currentTask.value && currentTask.value.id === shareTaskId.value) {
+    if (currentTask.value) {
       // Find the task in the filtered tasks
-      const updatedTask = filteredTasks.value.find(task => task.id === shareTaskId.value);
+      const updatedTask = filteredTasks.value.find(task => task.id === currentTask.value?.id);
       if (updatedTask) {
         currentTask.value = updatedTask;
       }
     }
-
-    // Clear the username field but keep the dialog open to allow sharing with more users
-    shareUsername.value = '';
   } catch (error) {
     console.error('Failed to share task:', error);
   } finally {
@@ -471,181 +596,167 @@ watch(taskTypeFilter, (_) => {
   fetchTasks();
 });
 
-// Watch for dialog close to clean up timer interval and subscription
+// Watch for dialog close
 watch(detailsDialog, (isOpen) => {
   if (!isOpen) {
+    // Stop the timer interval but don't unsubscribe from timer updates
+    // This allows the timer to continue running in the background
+    // but prevents unnecessary UI updates when the dialog is closed
     stopTimerInterval();
 
-    // Unsubscribe from timer updates
-    if (timerSubscription.value) {
-      timerSubscription.value.unsubscribe();
-      timerSubscription.value = null;
+    // Save the current timer state to the activeTimers map
+    if (selectedTask.value && selectedTask.value.pomodoroTimeMillis) {
+      activeTimers.value.set(selectedTask.value.id, {
+        remainingTimeMillis: timerCountdown.value,
+        timerActive: selectedTask.value.timerActive || false
+      });
     }
+
+    console.log('Detail dialog closed, timer continues in background');
+  } else if (selectedTask.value?.timerActive) {
+    // If reopening the dialog and the timer is active, restart the interval
+    startTimerInterval();
   }
 });
+
+// Background timer methods
+const startBackgroundTimerInterval = () => {
+  // Clear any existing background interval
+  stopBackgroundTimerInterval();
+
+  // Start a new interval that decrements active timers every 100 milliseconds
+  backgroundTimerInterval.value = window.setInterval(() => {
+    // Update each active timer
+    activeTimers.value.forEach((timer, taskId) => {
+      if (timer.timerActive && timer.remainingTimeMillis > 0) {
+        // Decrement the timer by 100 milliseconds
+        timer.remainingTimeMillis = Math.max(0, timer.remainingTimeMillis - 100);
+
+        // Update the map
+        activeTimers.value.set(taskId, timer);
+
+        // If the timer reaches zero, mark it as inactive
+        if (timer.remainingTimeMillis <= 0) {
+          timer.timerActive = false;
+          activeTimers.value.set(taskId, timer);
+
+          // Notify the backend that the timer has completed
+          taskStore.pauseTimer(taskId).catch(error => {
+            console.error('Failed to pause timer at completion:', error);
+          });
+        }
+      }
+    });
+  }, 100); // Run every 100 milliseconds for smoother updates
+};
+
+const stopBackgroundTimerInterval = () => {
+  if (backgroundTimerInterval.value !== null) {
+    clearInterval(backgroundTimerInterval.value);
+    backgroundTimerInterval.value = null;
+  }
+};
 
 // Lifecycle hooks
 onMounted(() => {
   // Initialize with the default filter (all)
   taskTypeFilter.value = 'all';
-  fetchTasks();
+  fetchTasks().then(() => {
+    // Subscribe to active timers when reopening the app
+    const allTasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
+    const activeTimerTasks = allTasks.filter(task => task.timerActive && task.pomodoroTimeMillis);
+
+    console.log(`Found ${activeTimerTasks.length} active timers to subscribe to`);
+
+    // Subscribe to each active timer
+    activeTimerTasks.forEach(task => {
+      // Only subscribe if we're not already subscribed to this task
+      if (!timerSubscription.value || currentSubscriptionTaskId.value !== task.id) {
+        const subscription = websocketService.subscribeToTaskTimer(task.id, (timerUpdate: TimerUpdateDto) => {
+          // Update the active timers map
+          activeTimers.value.set(task.id, {
+            remainingTimeMillis: timerUpdate.remainingTimeMillis,
+            timerActive: timerUpdate.timerActive
+          });
+
+          // Update the task in the store if it's the selected task
+          if (selectedTask.value && selectedTask.value.id === task.id) {
+            selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
+            selectedTask.value.timerActive = timerUpdate.timerActive;
+            timerCountdown.value = timerUpdate.remainingTimeMillis;
+
+            // Start or stop the timer interval based on the timer active state
+            if (timerUpdate.timerActive && !timerInterval.value && detailsDialog.value) {
+              startTimerInterval();
+            } else if (!timerUpdate.timerActive && timerInterval.value) {
+              stopTimerInterval();
+            }
+          }
+        });
+
+        // Store the subscription for the most recently active timer
+        if (!timerSubscription.value) {
+          timerSubscription.value = subscription;
+          currentSubscriptionTaskId.value = task.id;
+        }
+      }
+    });
+  });
+
+  // Start the background timer interval
+  startBackgroundTimerInterval();
 });
 
 // Clean up when component is unmounted
 onUnmounted(() => {
-  // Stop any active timer interval
+  // Stop the timer intervals
   stopTimerInterval();
+  stopBackgroundTimerInterval();
 
-  // Unsubscribe from timer updates
+  // Unsubscribe from timer updates when component is unmounted
+  // This prevents memory leaks and unnecessary network traffic
   if (timerSubscription.value) {
     timerSubscription.value.unsubscribe();
     timerSubscription.value = null;
+    currentSubscriptionTaskId.value = null;
   }
+
+  // Save the current timer state if a task is selected
+  if (selectedTask.value && selectedTask.value.pomodoroTimeMillis) {
+    activeTimers.value.set(selectedTask.value.id, {
+      remainingTimeMillis: timerCountdown.value,
+      timerActive: selectedTask.value.timerActive || false
+    });
+  }
+
+  console.log('Component unmounted, timer subscriptions cleaned up');
 });
 </script>
 
 <template>
   <div>
     <!-- Task Type Selector -->
-    <v-btn-toggle
-      v-model="taskTypeFilter"
-      color="primary"
-      :mandatory="true"
-      class="mb-4 task-type-toggle"
-    >
-      <v-btn value="all">
-        All Tasks
-      </v-btn>
-      <v-btn value="owned">
-        My Tasks
-      </v-btn>
-      <v-btn value="shared">
-        For Me
-      </v-btn>
-    </v-btn-toggle>
+    <TaskTypeSelector v-model="taskTypeFilter" />
 
     <!-- Search Field - Always visible -->
-    <v-text-field
-        v-model="searchQuery"
-        :hide-details="'auto'"
-        clearable
-        label="Search tasks"
-        variant="outlined"
-        class="mb-4"
-    >
-      <template v-slot:prepend-inner>
-        <v-icon>mdi-magnify</v-icon>
-      </template>
-    </v-text-field>
+    <TaskSearchField v-model="searchQuery" />
 
     <!-- Filters - Collapsible -->
-    <v-expansion-panels v-model="filterPanelOpen" class="mb-4">
-      <v-expansion-panel>
-        <v-expansion-panel-title>
-          <div class="d-flex align-center">
-            <v-icon class="mr-2">mdi-filter</v-icon>
-            <span>Additional Filters</span>
-          </div>
-        </v-expansion-panel-title>
-        <v-expansion-panel-text>
-          <v-row>
-            <v-col cols="12">
-              <v-select
-                  v-model="urgencyFilter"
-                  :hide-details="true"
-                  :items="[
-                  { title: 'All', value: 'ALL' },
-                  { title: 'Low', value: 'LOW' },
-                  { title: 'Medium', value: 'MEDIUM' },
-                  { title: 'High', value: 'HIGH' }
-                ]"
-                  item-title="title"
-                  item-value="value"
-                  label="Filter by urgency"
-                  variant="outlined"
-              ></v-select>
-            </v-col>
-          </v-row>
-          <v-row>
-            <v-col cols="12">
-              <v-switch
-                v-model="showCompleted"
-                :color="showCompleted ? 'success' : 'grey'"
-                :hide-details="true"
-                class="mt-2"
-                density="comfortable"
-                label="completed"
-              ></v-switch>
-            </v-col>
-          </v-row>
-        </v-expansion-panel-text>
-      </v-expansion-panel>
-    </v-expansion-panels>
+    <TaskFilterPanel 
+      v-model:urgencyFilter="urgencyFilter"
+      v-model:showCompleted="showCompleted"
+      v-model:panelOpen="filterPanelOpen"
+    />
 
     <!-- Task List -->
-    <v-list v-if="filteredTasks.length > 0" class="task-list">
-      <v-list-item
-          v-for="task in filteredTasks"
-          :key="task.id"
-          :class="{ 'completed-task': task.completed }"
-          class="task-item"
-      >
-            <template v-slot:prepend>
-              <v-checkbox
-                  :disabled="loading"
-                  :hide-details="true"
-                  :model-value="task.completed"
-                  @change="completeTask(task.id)"
-                  @click.stop
-              ></v-checkbox>
-            </template>
-
-            <div class="task-content">
-              <div class="d-flex align-center justify-space-between">
-                <v-list-item-title :class="{ 'text-decoration-line-through': task.completed }" class="task-title text-truncate">
-                  {{ task.name }}
-                </v-list-item-title>
-
-                <div class="task-actions">
-                  <v-btn
-                      :disabled="loading"
-                      icon="mdi-information-outline"
-                      size="medium"
-                      variant="tonal"
-                      class="task-action-btn"
-                      aria-label="View task details"
-                      @click.stop="openTaskDetailsDialog(task)"
-                  ></v-btn>
-                </div>
-              </div>
-
-              <div class="task-info">
-                <v-chip
-                    :color="getUrgencyColor(task.urgency)"
-                    class="mr-2 mb-1"
-                    size="x-small"
-                >
-                  {{ task.urgency }}
-                </v-chip>
-                <v-chip v-if="task.dueDate" class="mr-2 mb-1" size="x-small">
-                  {{ formatDate(task.dueDate) }}
-                </v-chip>
-                <v-chip v-if="task.dueDate" class="mr-2 mb-1" size="x-small">
-                  {{ formatTime(task.dueDate) }}
-                </v-chip>
-                <v-chip v-if="task.visibility === 'SHARED'" class="mr-2 mb-1" :color="task.owner ? 'primary' : 'info'" size="x-small">
-                  {{ task.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
-                </v-chip>
-              </div>
-            </div>
-          </v-list-item>
-    </v-list>
-
-    <v-alert
-        v-else
-        text="No tasks found. Create a new task to get started!"
-        type="info"
-    ></v-alert>
+    <TaskList
+      :tasks="filteredTasks"
+      :loading="loading"
+      :has-active-timer="hasActiveTimer"
+      :get-task-remaining-time="getTaskRemainingTime"
+      @complete="completeTask"
+      @view-details="openTaskDetailsDialog"
+    />
 
     <!-- Add Task FAB -->
     <v-btn
@@ -657,618 +768,47 @@ onUnmounted(() => {
         @click="openCreateTaskDialog"
     ></v-btn>
 
-    <!-- Task Dialog -->
-    <v-dialog v-model="taskDialog" max-width="500px">
-      <v-card class="task-dialog-card">
-        <v-card-title>
-          <span class="text-h5">{{ isEditMode ? 'Edit Task' : 'New Task' }}</span>
-        </v-card-title>
-
-        <v-card-text>
-          <v-container>
-            <v-row>
-              <v-col cols="12">
-                <v-text-field
-                    v-model="taskForm.name"
-                    label="Task Name"
-                    required
-                    class="task-input"
-                    variant="outlined"
-                    hide-details="auto"
-                    :loading="false"
-                ></v-text-field>
-              </v-col>
-
-              <!-- Toggle button for advanced options -->
-              <v-col cols="12" class="pt-0">
-                <v-btn
-                    variant="text"
-                    color="primary"
-                    @click="showAdvancedOptions = !showAdvancedOptions"
-                    class="px-0"
-                >
-                  <v-icon class="mr-1">{{ showAdvancedOptions ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
-                  {{ showAdvancedOptions ? 'Hide additional options' : 'Show additional options' }}
-                </v-btn>
-              </v-col>
-
-              <!-- Advanced options section -->
-              <template v-if="showAdvancedOptions">
-                <v-col cols="12">
-                  <v-textarea
-                      v-model="taskForm.description"
-                      label="Description"
-                      rows="3"
-                      class="task-input"
-                      variant="outlined"
-                      hide-details="auto"
-                      :loading="false"
-                  ></v-textarea>
-                </v-col>
-                <v-col cols="12">
-                  <div class="date-time-container">
-                    <v-row>
-                      <v-col cols="12" sm="6">
-                        <v-text-field
-                            v-model="taskDate"
-                            label="Due Date"
-                            type="date"
-                            hint="Select the date"
-                            persistent-hint
-                            class="task-input"
-                            variant="outlined"
-                            density="comfortable"
-                            :loading="false"
-                        ></v-text-field>
-                      </v-col>
-                      <v-col cols="12" sm="6">
-                        <v-text-field
-                            v-model="taskTime"
-                            label="Due Time"
-                            type="time"
-                            hint="Select the time"
-                            persistent-hint
-                            class="task-input"
-                            variant="outlined"
-                            density="comfortable"
-                            :loading="false"
-                        ></v-text-field>
-                      </v-col>
-                    </v-row>
-                  </div>
-                </v-col>
-                <v-col cols="12">
-                  <v-select
-                      v-model="taskForm.urgency"
-                      :items="[
-                      { title: 'High', value: 'HIGH' },
-                      { title: 'Medium', value: 'MEDIUM' },
-                      { title: 'Low', value: 'LOW' }
-                    ]"
-                      item-title="title"
-                      item-value="value"
-                      label="Urgency"
-                      class="task-input"
-                      variant="outlined"
-                      hide-details="auto"
-                      :loading="false"
-                  ></v-select>
-                </v-col>
-              </template>
-            </v-row>
-          </v-container>
-        </v-card-text>
-
-        <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn
-              :disabled="loading"
-              color="secondary"
-              text=""
-              @click="taskDialog = false"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-              :disabled="loading || !taskForm.name"
-              :loading="loading"
-              color="primary"
-              text=""
-              @click="saveTask"
-          >
-            Save
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <!-- Task Form Dialog -->
+    <TaskFormDialog
+      v-model="taskDialog"
+      :is-edit-mode="isEditMode"
+      :loading="loading"
+      :task="taskForm"
+      @save="saveTask"
+    />
 
     <!-- Share Task Dialog -->
-    <v-dialog v-model="shareDialog" max-width="500px">
-      <v-card>
-        <v-card-title>
-          <span class="text-h5">{{ currentTask && currentTask.owner ? 'Share Task' : 'Task Shared With Me' }}</span>
-        </v-card-title>
-
-        <v-card-text>
-          <v-container>
-            <v-row>
-              <v-col cols="12">
-                <v-select
-                    v-model="shareUsername"
-                    :disabled="loading || friendships.length === 0"
-                    :hint="friendships.length === 0 ? 'You have no friends to share with' : ''"
-                    :items="friendships"
-                    :item-title="item => item.friend?.firstname + ' ' + item.friend?.lastname"
-                    :item-value="item => item.friend?.username"
-                    label="Select Friend"
-                    persistent-hint
-                >
-                  <template v-slot:item="{ item, props }">
-                    <v-list-item v-bind="props">
-                      <v-list-item-subtitle>{{ item.raw.friend?.username || 'Kein Benutzername' }}</v-list-item-subtitle>
-                    </v-list-item>
-                  </template>
-                  <template v-slot:selection="{ item }">
-                    <div v-if="item.raw && item.raw.friend">
-                      <div>{{ item.raw.friend.firstname }}</div>
-                      <small>{{ item.raw.friend.username }}</small>
-                    </div>
-                    <div v-else>Choose a friend to share</div>
-                  </template>
-                </v-select>
-              </v-col>
-            </v-row>
-
-            <!-- Shared with list -->
-            <v-row v-if="currentTask && currentTask.sharedWith && currentTask.sharedWith.length > 0">
-              <v-col cols="12">
-                <v-divider class="my-3"></v-divider>
-                <h3 class="text-subtitle-1 mb-2">{{ currentTask && currentTask.owner ? 'Currently shared with:' : 'Shared by:' }}</h3>
-                <div class="shared-with-list">
-                  <v-chip
-                      v-for="user in currentTask.sharedWith"
-                      :key="user.id"
-                      :disabled="loading || !currentTask.owner"
-                      class="mr-1 mt-1"
-                      closable
-                      size="small"
-                      @click:close="unshareTask(currentTask.id, user.username)"
-                  >
-                    {{ user.firstname }} {{ user.lastname }}
-                  </v-chip>
-                </div>
-              </v-col>
-            </v-row>
-          </v-container>
-        </v-card-text>
-
-        <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn
-              :disabled="loading"
-              color="secondary"
-              text=""
-              @click="shareDialog = false"
-          >
-            Close
-          </v-btn>
-          <v-btn
-              :disabled="loading || !shareUsername"
-              :loading="loading"
-              color="primary"
-              text=""
-              @click="shareTask"
-          >
-            Share
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <TaskShareDialog
+      v-model="shareDialog"
+      :task="currentTask"
+      :friendships="friendships"
+      :loading="loading"
+      @share="shareTask"
+      @unshare="unshareTask"
+      @fetch-friends="fetchFriends"
+    />
 
     <!-- Task Details Dialog -->
-    <v-dialog v-model="detailsDialog" max-width="500px">
-      <v-card v-if="selectedTask">
-        <v-card-title>
-          <span class="text-h5" :class="{ 'text-decoration-line-through': selectedTask.completed }">
-            {{ selectedTask.name }}
-          </span>
-        </v-card-title>
-
-        <!-- Tabs for Details and Timer -->
-        <v-tabs v-model="activeTab" color="primary" align-tabs="center">
-          <v-tab value="details">
-            <v-icon start>mdi-information-outline</v-icon>
-            Details
-          </v-tab>
-          <v-tab value="timer">
-            <v-icon start>mdi-timer-outline</v-icon>
-            Pomodoro Timer
-          </v-tab>
-        </v-tabs>
-
-        <v-card-text>
-          <v-window v-model="activeTab">
-            <!-- Details Tab -->
-            <v-window-item value="details">
-              <v-container>
-                <v-row>
-                  <v-col cols="12">
-                    <div class="d-flex align-center flex-wrap mb-2">
-                      <v-chip :color="getUrgencyColor(selectedTask.urgency)" class="mr-2 mb-1">
-                        {{ selectedTask.urgency }}
-                      </v-chip>
-                      <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
-                        {{ formatDate(selectedTask.dueDate) }}
-                      </v-chip>
-                      <v-chip v-if="selectedTask.dueDate" class="mr-2 mb-1">
-                        {{ formatTime(selectedTask.dueDate) }}
-                      </v-chip>
-                      <v-chip v-if="selectedTask.visibility === 'SHARED'" :color="selectedTask.owner ? 'primary' : 'info'" class="mb-1">
-                        {{ selectedTask.owner ? 'SHARED BY ME' : 'SHARED WITH ME' }}
-                      </v-chip>
-                    </div>
-                  </v-col>
-                </v-row>
-
-                <v-row v-if="selectedTask.description">
-                  <v-col cols="12">
-                    <div class="text-subtitle-1 font-weight-bold mb-1">Description:</div>
-                    <div class="task-details-description">{{ selectedTask.description }}</div>
-                  </v-col>
-                </v-row>
-
-                <v-row v-if="selectedTask.sharedWith && selectedTask.sharedWith.length > 0">
-                  <v-col cols="12">
-                    <v-divider class="my-3"></v-divider>
-                    <div class="text-subtitle-1 font-weight-bold mb-1">{{ selectedTask.owner ? 'Shared with:' : 'Shared by:' }}</div>
-                    <div class="shared-with-list">
-                      <v-chip
-                          v-for="user in selectedTask.sharedWith"
-                          :key="user.id"
-                          class="mr-1 mt-1"
-                          size="small"
-                      >
-                        {{ user.firstname }} {{ user.lastname }}
-                      </v-chip>
-                    </div>
-                  </v-col>
-                </v-row>
-              </v-container>
-            </v-window-item>
-
-            <!-- Timer Tab -->
-            <v-window-item value="timer">
-              <v-container>
-                <!-- Timer Display -->
-                <div class="timer-display text-center mb-4">
-                  <div class="timer-countdown">{{ formatTimeDisplay(timerCountdown) }}</div>
-                  <div v-if="selectedTask.timerActive" class="timer-status">Timer is running</div>
-                  <div v-else class="timer-status">Timer is paused</div>
-                </div>
-
-                <!-- Timer Controls -->
-                <div class="timer-controls d-flex justify-center mb-4">
-                  <v-btn
-                    v-if="!selectedTask.timerActive"
-                    color="success"
-                    class="mx-1"
-                    :disabled="loading || !selectedTask.pomodoroTimeSeconds"
-                    @click="startTimer(selectedTask.id)"
-                  >
-                    <v-icon>mdi-play</v-icon>
-                    Start
-                  </v-btn>
-                  <v-btn
-                    v-else
-                    color="warning"
-                    class="mx-1"
-                    :disabled="loading"
-                    @click="pauseTimer(selectedTask.id)"
-                  >
-                    <v-icon>mdi-pause</v-icon>
-                    Pause
-                  </v-btn>
-                  <v-btn
-                    color="error"
-                    class="mx-1"
-                    :disabled="loading"
-                    @click="resetTimer(selectedTask.id)"
-                  >
-                    <v-icon>mdi-refresh</v-icon>
-                    Reset
-                  </v-btn>
-                </div>
-
-                <!-- Timer Duration Setting -->
-                <div class="timer-settings">
-                  <v-text-field
-                    v-model="pomodoroMinutes"
-                    label="Pomodoro Duration (minutes)"
-                    type="number"
-                    min="1"
-                    max="60"
-                    :disabled="loading || selectedTask.timerActive"
-                    @change="updatePomodoroTime"
-                    class="mb-2"
-                    density="compact"
-                    hide-details
-                  ></v-text-field>
-                </div>
-              </v-container>
-            </v-window-item>
-          </v-window>
-        </v-card-text>
-
-        <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn
-              :disabled="loading"
-              color="secondary"
-              text=""
-              @click="detailsDialog = false"
-          >
-            Close
-          </v-btn>
-          <v-btn
-              :disabled="loading"
-              color="primary"
-              text=""
-              @click="openEditTaskDialog(selectedTask); detailsDialog = false"
-          >
-            Edit
-          </v-btn>
-          <v-btn
-              v-if="!selectedTask.sharedWith || selectedTask.owner"
-              :disabled="loading"
-              color="info"
-              text=""
-              @click="openShareDialog(selectedTask); detailsDialog = false"
-          >
-            Share
-          </v-btn>
-          <v-btn
-              :disabled="loading"
-              color="error"
-              text=""
-              @click="deleteTask(selectedTask.id); detailsDialog = false"
-          >
-            Delete
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <TaskDetailsDialog
+      v-model="detailsDialog"
+      :task="selectedTask"
+      :timer-countdown="timerCountdown"
+      :loading="loading"
+      @edit="openEditTaskDialog"
+      @share="openShareDialog"
+      @delete="deleteTask"
+      @start-timer="startTimer"
+      @pause-timer="pauseTimer"
+      @reset-timer="resetTimer"
+      @update-pomodoro="updatePomodoroTime"
+    />
   </div>
 </template>
 
 <style scoped>
-.completed-task {
-  opacity: 0.7;
-}
-
 .add-task-btn {
   position: fixed;
   bottom: 70px;
   right: 16px;
-}
-
-/* Improved styling for the task dialog */
-.date-time-container {
-  background-color: rgba(var(--v-theme-surface-variant), 0.1);
-  border-radius: 8px;
-  padding: 8px;
-  margin-bottom: 8px;
-}
-
-.task-dialog-card {
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-}
-
-.task-dialog-card v-card-title {
-  padding: 20px 24px;
-  background-color: rgba(var(--v-theme-primary), 0.05);
-  border-bottom: 1px solid rgba(var(--v-theme-primary), 0.1);
-}
-
-.task-dialog-card v-card-text {
-  padding-top: 24px;
-}
-
-/* Input field styling */
-.task-input {
-  margin-bottom: 8px;
-  transition: all 0.2s ease;
-}
-
-.task-input:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.task-content {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  height: 100%;
-  padding: 4px 0;
-}
-
-.task-title {
-  font-weight: bold;
-  margin-bottom: 0;
-  max-width: 85%;
-}
-
-/* Task description and metadata styles removed as they were unused */
-
-.task-info {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-top: 4px;
-}
-
-.task-actions {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-  padding: 4px 0;
-}
-
-.task-action-btn {
-  min-width: 44px !important; /* Minimum touch target size per WCAG */
-  min-height: 44px !important; /* Minimum touch target size per WCAG */
-  border-radius: 8px;
-  margin: 0 2px;
-  transition: all 0.2s ease;
-}
-
-.task-action-btn:hover {
-  transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.shared-with-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-/* shared-with-title selector removed as it was unused */
-
-/* Task list styling for visual separation */
-.task-list {
-  padding: 8px;
-  background: transparent;
-}
-
-.task-item {
-  margin-bottom: 12px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: all 0.2s ease;
-  background-color: rgba(255, 255, 255, 0.8);
-  overflow: hidden;
-  position: relative;
-  height: auto !important; /* Allow height to adjust based on content */
-  min-height: 80px !important; /* Increased minimum height for better touch targets */
-  padding: 8px 16px; /* Add padding for better spacing */
-  cursor: pointer;
-}
-
-.task-item:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  transform: translateY(-2px);
-}
-
-.task-item:last-child {
-  margin-bottom: 0;
-}
-
-.task-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background-color: rgb(var(--v-theme-primary));
-  opacity: 0.7;
-}
-
-.task-item.completed-task::before {
-  background-color: rgb(var(--v-theme-success));
-}
-
-/* Task details dialog styles */
-.task-details-description {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* Task details dialog tab styles */
-/* v-tabs and v-window-item selectors removed as they were unused */
-
-/* Timer styles */
-.timer-display {
-  background-color: rgba(var(--v-theme-surface-variant), 0.1);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.timer-countdown {
-  font-size: 2.5rem;
-  font-weight: bold;
-  color: rgb(var(--v-theme-primary));
-  font-family: monospace;
-  letter-spacing: 2px;
-}
-
-.timer-status {
-  font-size: 0.9rem;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  margin-top: 4px;
-}
-
-.timer-controls {
-  margin-bottom: 16px;
-}
-
-.timer-settings {
-  background-color: rgba(var(--v-theme-surface-variant), 0.05);
-  border-radius: 8px;
-  padding: 16px;
-}
-
-/* Task type toggle styles */
-.task-type-toggle {
-  margin-bottom: 16px;
-  display: flex;
-}
-
-/* Styling for v-btn inside task-type-toggle */
-.task-type-toggle > * {
-  flex: 1;
-}
-
-/* Mobile-specific styles */
-@media (max-width: 600px) {
-  .task-item {
-    margin-bottom: 8px;
-    min-height: 90px !important; /* Slightly taller on mobile for better touch */
-    padding: 8px 12px; /* Adjusted padding for mobile */
-  }
-
-  .task-type-toggle {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-  }
-
-  /* Styling for buttons inside task-type-toggle */
-  .task-type-toggle > * {
-    min-width: 100px;
-  }
-
-  .task-title {
-    max-width: 75%; /* More space for title with fewer buttons */
-    font-size: 0.95rem; /* Slightly smaller font on mobile */
-  }
-
-  .task-action-btn {
-    min-width: 48px !important; /* Even larger touch targets on mobile */
-    min-height: 48px !important;
-  }
-
-  .task-actions {
-    padding: 6px 0; /* More padding on mobile */
-  }
-
-  /* Ensure task info chips are readable on mobile */
-  .task-info > * {
-    margin-bottom: 4px;
-  }
 }
 </style>

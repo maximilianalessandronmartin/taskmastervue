@@ -98,6 +98,17 @@ npm run type-check
 - Docker
 - Docker Compose
 
+#### Environment Variables
+The application uses a `.env` file for configuration. Make sure this file exists in the project root with the following variables:
+
+```
+VITE_API_BASE_URL=http://your-api-url:8080/api
+VITE_API_BASE_URL_SOCKET=http://your-api-url:8080
+VITE_API_BASE_URL_SOCKET_LOCAL=http://localhost:8080
+```
+
+The Docker Compose setup automatically loads these variables from the `.env` file.
+
 #### Development with Hot-Reload
 ```bash
 # Start the development container with hot-reload
@@ -122,12 +133,19 @@ docker-compose up app-prod --build
    cd taskmastervue
    ```
 
-2. Build and run the Docker container
+2. Create a `.env` file in the project root with your environment variables:
+   ```bash
+   echo "VITE_API_BASE_URL=http://your-api-url:8080/api" > .env
+   echo "VITE_API_BASE_URL_SOCKET=http://your-api-url:8080" >> .env
+   echo "VITE_API_BASE_URL_SOCKET_LOCAL=http://localhost:8080" >> .env
+   ```
+
+3. Build and run the Docker container
    ```bash
    docker-compose up app-prod --build
    ```
 
-3. Access the application at `http://<raspberry-pi-ip>:80`
+4. Access the application at `http://<raspberry-pi-ip>:80`
 
 #### Notes for Raspberry Pi Deployment
 - The Docker images used (node:20-alpine and nginx:stable-alpine) are compatible with ARM64 architecture

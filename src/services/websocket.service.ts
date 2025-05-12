@@ -2,7 +2,8 @@ import { ref } from 'vue';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import type { IMessage } from '@stomp/stompjs';
-import type { Notification, TimerUpdateDto } from '../types/models';
+import type { Notification, NotificationDto, TimerUpdateDto } from '../types/models';
+import { useNotificationStore } from '../store/notification.store';
 
 
 // Use the WebSocket-specific URL if available
@@ -41,8 +42,7 @@ class WebSocketService {
     try {
       // Create a new SockJS instance
       const socket = new SockJS(`${SOCKET_BASE_URL}/ws`, null, { 
-        transports: ['websocket', 'xhr-streaming', 'xhr-polling'],
-        withCredentials: true
+        transports: ['websocket', 'xhr-streaming', 'xhr-polling']
       });
 
       // Create a new STOMP client
@@ -99,21 +99,47 @@ class WebSocketService {
    * @param userEmail The email of the user to subscribe to notifications for
    */
   public subscribeToNotifications(userEmail: string): void {
+    console.log(`Subscribing to notifications for user: ${userEmail}`);
+
     if (!this.stompClient || !this.stompClient.connected) {
       console.error('STOMP client is not connected');
       return;
     }
 
+    console.log('STOMP client is connected, proceeding with subscription');
+
+    // Get the notification store
+    const notificationStore = useNotificationStore();
+    console.log('Got notification store instance');
+
     // Subscribe to the user-specific notification channel
-    this.stompClient.subscribe(`/user/${userEmail}/queue/notifications`, (message: IMessage) => {
+    console.log(`Subscribing to channel: /user/${userEmail}/queue/notifications`);
+    const subscription = this.stompClient.subscribe(`/user/${userEmail}/queue/notifications`, (message: IMessage) => {
+      console.log('Raw notification message received:', message.body);
+
       try {
-        const notification = JSON.parse(message.body) as Notification;
+        const notificationDto = JSON.parse(message.body) as NotificationDto;
+        console.log('Received notification:', notificationDto);
+
+        // Convert NotificationDto to Notification using the store's method
+        const notification = notificationStore.convertDtoToNotification(notificationDto);
+        console.log('Converted notification:', notification);
+
+        // Store the notification in our local array
+        console.log('Current local notifications count:', this.notifications.value.length);
         this.notifications.value = [...this.notifications.value, notification];
+        console.log('Updated local notifications count:', this.notifications.value.length);
+
+        // We'll only emit the event and let the store handle it through its listener
+        // This avoids potentially calling handleNewNotification twice
+        console.log('Emitting notification event');
         this.emitEvent('notification', notification);
       } catch (error) {
         console.error('Failed to parse notification message:', error);
       }
     });
+
+    console.log('Subscription created successfully:', subscription.id);
   }
 
   /**
@@ -264,15 +290,28 @@ class WebSocketService {
    * Emit an event to all registered listeners
    */
   private emitEvent(event: string, data: any): void {
+    console.log(`Emitting event: ${event}, listeners:`, this.listeners.has(event) ? this.listeners.get(event)?.length : 0);
+
     const callbacks = this.listeners.get(event);
     if (callbacks) {
-      callbacks.forEach(callback => {
+      console.log(`Found ${callbacks.length} callbacks for event: ${event}`);
+      callbacks.forEach((callback, index) => {
         try {
+          console.log(`Executing callback ${index + 1} for event: ${event}`);
           callback(data);
+          console.log(`Callback ${index + 1} executed successfully`);
         } catch (error) {
-          console.error(`Error in ${event} event listener:`, error);
+          console.error(`Error in ${event} event listener (callback ${index + 1}):`, error);
         }
       });
+    } else {
+      // Only log a warning for events that should always have listeners
+      // Connection and error events are common and might not always have listeners
+      if (event !== 'connection' && event !== 'error') {
+        console.warn(`No callbacks found for event: ${event}`);
+      } else {
+        console.log(`No callbacks registered for ${event} event - this is normal if no component needs to handle this event`);
+      }
     }
   }
 }
