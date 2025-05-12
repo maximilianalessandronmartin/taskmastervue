@@ -4,6 +4,7 @@ import { Client } from '@stomp/stompjs';
 import type { IMessage } from '@stomp/stompjs';
 import type { Notification, NotificationDto, TimerUpdateDto } from '../types/models';
 import { useNotificationStore } from '../store/notification.store';
+import loggerService from './logger.service';
 
 
 // Use the WebSocket-specific URL if available
@@ -30,21 +31,23 @@ class WebSocketService {
    */
   public connect(): void {
     if (this.stompClient && this.stompClient.connected) {
-      console.log('STOMP client is already connected');
+      loggerService.debug('STOMP client is already connected');
       return;
     }
 
     const token = localStorage.getItem('token');
     if (!token) {
-      console.error('No authentication token found');
+      loggerService.error('No authentication token found for WebSocket connection');
       return;
     }
 
     try {
+      loggerService.info('Connecting to WebSocket server');
       // Create a new SockJS instance
       const socket = new SockJS(`${SOCKET_BASE_URL}/ws`, null, { 
         transports: ['websocket', 'xhr-streaming', 'xhr-polling']
       });
+      loggerService.debug(`Created SockJS instance with URL: ${SOCKET_BASE_URL}/ws`);
 
       // Create a new STOMP client
       this.stompClient = new Client({
@@ -53,22 +56,26 @@ class WebSocketService {
           'Authorization': `Bearer ${token}` // Token for authentication
         },
         debug: function (str) {
-          console.log(str);
+          // Only log STOMP debug messages at debug level
+          loggerService.debug(`STOMP: ${str}`);
         },
         reconnectDelay: 5000,
         heartbeatIncoming: 4000,
         heartbeatOutgoing: 4000
       });
+      loggerService.debug('Created STOMP client');
 
       // Set up connection event handlers
       this.stompClient.onConnect = this.handleConnect.bind(this);
       this.stompClient.onStompError = this.handleStompError.bind(this);
       this.stompClient.onWebSocketClose = this.handleWebSocketClose.bind(this);
+      loggerService.debug('Set up STOMP event handlers');
 
       // Activate the STOMP client
+      loggerService.debug('Activating STOMP client');
       this.stompClient.activate();
     } catch (error) {
-      console.error('Failed to connect to WebSocket server:', error);
+      loggerService.error('Failed to connect to WebSocket server:', error);
       this.attemptReconnect();
     }
   }
@@ -77,28 +84,37 @@ class WebSocketService {
    * Disconnect from the WebSocket server
    */
   public disconnect(): void {
+    loggerService.info('Disconnecting from WebSocket server');
+
     if (this.stompClient) {
       // Unsubscribe from all active timer subscriptions
+      loggerService.debug('Unsubscribing from all active timer subscriptions');
       this.unsubscribeFromAllTimers();
 
       // Deactivate the STOMP client
+      loggerService.debug('Deactivating STOMP client');
       this.stompClient.deactivate();
       this.stompClient = null;
       this.isConnected.value = false;
+      loggerService.debug('STOMP client deactivated');
+    } else {
+      loggerService.debug('No active STOMP client to disconnect');
     }
 
     if (this.reconnectTimeout) {
+      loggerService.debug('Clearing reconnect timeout');
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
 
     // Clear any pending notification subscriptions
     if (this.pendingNotificationSubscriptions.length > 0) {
-      console.log(`Clearing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
+      loggerService.debug(`Clearing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
       this.pendingNotificationSubscriptions = [];
     }
 
     this.reconnectAttempts = 0;
+    loggerService.info('WebSocket disconnection complete');
   }
 
   /**
@@ -106,59 +122,60 @@ class WebSocketService {
    * @param userEmail The email of the user to subscribe to notifications for
    */
   public subscribeToNotifications(userEmail: string): void {
-    console.log(`Subscribing to notifications for user: ${userEmail}`);
+    loggerService.info(`Subscribing to notifications for user: ${userEmail}`);
 
     if (!this.stompClient || !this.stompClient.connected) {
-      console.log('STOMP client is not connected, queueing subscription request');
+      loggerService.warn('STOMP client is not connected, queueing subscription request');
       // Add to pending subscriptions if not already in the queue
       if (!this.pendingNotificationSubscriptions.includes(userEmail)) {
         this.pendingNotificationSubscriptions.push(userEmail);
-        console.log(`Queued notification subscription for user: ${userEmail}`);
+        loggerService.debug(`Queued notification subscription for user: ${userEmail}`);
       }
 
       // If not connected at all, try to connect
       if (!this.stompClient) {
-        console.log('No STOMP client exists, attempting to connect');
+        loggerService.info('No STOMP client exists, attempting to connect');
         this.connect();
       }
       return;
     }
 
-    console.log('STOMP client is connected, proceeding with subscription');
+    loggerService.debug('STOMP client is connected, proceeding with subscription');
 
     // Get the notification store
     const notificationStore = useNotificationStore();
-    console.log('Got notification store instance');
+    loggerService.debug('Got notification store instance');
 
     // Subscribe to the user-specific notification channel
-    console.log(`Subscribing to channel: /user/${userEmail}/queue/notifications`);
+    loggerService.debug(`Subscribing to channel: /user/${userEmail}/queue/notifications`);
     const subscription = this.stompClient.subscribe(`/user/${userEmail}/queue/notifications`, (message: IMessage) => {
-      console.log('Raw notification message received:', message.body);
+      loggerService.debug('Raw notification message received');
 
       try {
         const notificationDto = JSON.parse(message.body) as NotificationDto;
-        console.log('Received notification:', notificationDto);
+        loggerService.info(`Received notification: ${notificationDto.type} - ${notificationDto.message}`);
+        loggerService.debug('Notification details:', notificationDto);
 
         // Convert NotificationDto to Notification using the store's method
         const notification = notificationStore.convertDtoToNotification(notificationDto);
-        console.log('Converted notification:', notification);
+        loggerService.debug('Converted notification to application model');
 
         // Store the notification in our local array
-        console.log('Current local notifications count:', this.notifications.value.length);
+        loggerService.debug(`Current local notifications count: ${this.notifications.value.length}`);
         this.notifications.value = [...this.notifications.value, notification];
-        console.log('Updated local notifications count:', this.notifications.value.length);
+        loggerService.debug(`Updated local notifications count: ${this.notifications.value.length}`);
 
         // We'll only emit the event and let the store handle it through its listener
         // This avoids potentially calling handleNewNotification twice
-        console.log('Emitting notification event');
+        loggerService.debug('Emitting notification event');
         this.emitEvent('notification', notification);
       } catch (error) {
-        console.error('Failed to parse notification message:', error);
+        loggerService.error('Failed to parse notification message:', error);
       }
     });
 
-    console.log('Subscription created successfully:', subscription.id);
-    console.log(`Successfully subscribed to notifications topic for user: ${userEmail}`);
+    loggerService.debug(`Subscription created successfully: ${subscription.id}`);
+    loggerService.info(`Successfully subscribed to notifications topic for user: ${userEmail}`);
   }
 
   /**
@@ -168,36 +185,47 @@ class WebSocketService {
    * @returns An object with an unsubscribe method
    */
   public subscribeToTaskTimer(taskId: string, callback: (timerUpdate: TimerUpdateDto) => void): { unsubscribe: () => void } {
+    loggerService.debug(`Subscribing to timer updates for task: ${taskId}`);
+
     if (!this.stompClient || !this.stompClient.connected) {
-      console.error('STOMP client is not connected');
-      return { unsubscribe: () => {} };
+      loggerService.error('STOMP client is not connected, cannot subscribe to timer updates');
+      return { unsubscribe: () => {
+        loggerService.debug('Dummy unsubscribe called for non-existent timer subscription');
+      } };
     }
 
     // Check if already subscribed to this task's timer
     if (this.activeTimerSubscriptions.has(taskId)) {
+      loggerService.debug(`Already subscribed to timer updates for task: ${taskId}, returning existing subscription`);
       return this.activeTimerSubscriptions.get(taskId)!;
     }
 
+    loggerService.debug(`Creating new subscription for task timer: ${taskId}`);
     // Subscribe to the task-specific timer channel
     const subscription = this.stompClient.subscribe(`/topic/task/${taskId}/timer`, (message: IMessage) => {
+      loggerService.debug(`Received timer update for task: ${taskId}`);
       try {
         const timerUpdate = JSON.parse(message.body) as TimerUpdateDto;
+        loggerService.debug(`Timer update details: status=${timerUpdate.status}, timeRemaining=${timerUpdate.timeRemaining}`);
         callback(timerUpdate);
       } catch (error) {
-        console.error('Failed to parse timer update message:', error);
+        loggerService.error(`Failed to parse timer update message for task ${taskId}:`, error);
       }
     });
 
     // Create an object with an unsubscribe method
     const unsubscribeObj = {
       unsubscribe: () => {
+        loggerService.debug(`Unsubscribing from timer updates for task: ${taskId}`);
         subscription.unsubscribe();
         this.activeTimerSubscriptions.delete(taskId);
+        loggerService.debug(`Successfully unsubscribed from timer updates for task: ${taskId}`);
       }
     };
 
     // Store the subscription
     this.activeTimerSubscriptions.set(taskId, unsubscribeObj);
+    loggerService.info(`Successfully subscribed to timer updates for task: ${taskId}`);
 
     return unsubscribeObj;
   }
@@ -254,13 +282,14 @@ class WebSocketService {
    * Handle STOMP connect event
    */
   private handleConnect(frame: any): void {
-    console.log('STOMP connection established:', frame);
+    loggerService.info('STOMP connection established successfully');
+    loggerService.debug('STOMP connection frame:', frame);
     this.isConnected.value = true;
     this.reconnectAttempts = 0;
 
     // Process any pending notification subscriptions
     if (this.pendingNotificationSubscriptions.length > 0) {
-      console.log(`Processing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
+      loggerService.info(`Processing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
 
       // Create a copy of the array to avoid modification during iteration
       const pendingSubscriptions = [...this.pendingNotificationSubscriptions];
@@ -270,12 +299,13 @@ class WebSocketService {
 
       // Process each pending subscription
       pendingSubscriptions.forEach(userEmail => {
-        console.log(`Processing queued subscription for user: ${userEmail}`);
+        loggerService.debug(`Processing queued subscription for user: ${userEmail}`);
         this.subscribeToNotifications(userEmail);
       });
     }
 
     // Emit the connection event
+    loggerService.debug('Emitting connection event (connected: true)');
     this.emitEvent('connection', { connected: true });
   }
 
@@ -283,7 +313,7 @@ class WebSocketService {
    * Handle STOMP error event
    */
   private handleStompError(frame: any): void {
-    console.error('STOMP error:', frame);
+    loggerService.error('STOMP protocol error:', frame);
     this.emitEvent('error', frame);
   }
 
@@ -291,15 +321,19 @@ class WebSocketService {
    * Handle WebSocket close event
    */
   private handleWebSocketClose(event: CloseEvent): void {
-    console.log(`WebSocket connection closed: ${event.code} ${event.reason}`);
+    loggerService.warn(`WebSocket connection closed: ${event.code} ${event.reason || 'No reason provided'}`);
     this.isConnected.value = false;
 
     // Emit the disconnection event
+    loggerService.debug('Emitting connection event (connected: false)');
     this.emitEvent('connection', { connected: false });
 
     // Attempt to reconnect if the connection was closed unexpectedly
     if (event.code !== 1000) {
+      loggerService.info(`WebSocket closed unexpectedly (code: ${event.code}), attempting to reconnect`);
       this.attemptReconnect();
+    } else {
+      loggerService.debug('WebSocket closed normally (code: 1000), not attempting to reconnect');
     }
   }
 
@@ -308,16 +342,17 @@ class WebSocketService {
    */
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Maximum reconnection attempts reached');
+      loggerService.warn(`Maximum reconnection attempts (${this.maxReconnectAttempts}) reached, giving up`);
       return;
     }
 
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
 
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    loggerService.info(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
     this.reconnectTimeout = window.setTimeout(() => {
+      loggerService.debug(`Reconnect timeout elapsed, initiating connection attempt ${this.reconnectAttempts}`);
       this.connect();
     }, delay);
   }
@@ -326,27 +361,28 @@ class WebSocketService {
    * Emit an event to all registered listeners
    */
   private emitEvent(event: string, data: any): void {
-    console.log(`Emitting event: ${event}, listeners:`, this.listeners.has(event) ? this.listeners.get(event)?.length : 0);
+    const listenerCount = this.listeners.has(event) ? this.listeners.get(event)?.length : 0;
+    loggerService.debug(`Emitting event: ${event}, listeners: ${listenerCount}`);
 
     const callbacks = this.listeners.get(event);
     if (callbacks) {
-      console.log(`Found ${callbacks.length} callbacks for event: ${event}`);
+      loggerService.debug(`Found ${callbacks.length} callbacks for event: ${event}`);
       callbacks.forEach((callback, index) => {
         try {
-          console.log(`Executing callback ${index + 1} for event: ${event}`);
+          loggerService.debug(`Executing callback ${index + 1} for event: ${event}`);
           callback(data);
-          console.log(`Callback ${index + 1} executed successfully`);
+          loggerService.debug(`Callback ${index + 1} executed successfully`);
         } catch (error) {
-          console.error(`Error in ${event} event listener (callback ${index + 1}):`, error);
+          loggerService.error(`Error in ${event} event listener (callback ${index + 1}):`, error);
         }
       });
     } else {
       // Only log a warning for events that should always have listeners
       // Connection and error events are common and might not always have listeners
       if (event !== 'connection' && event !== 'error') {
-        console.warn(`No callbacks found for event: ${event}`);
+        loggerService.warn(`No callbacks found for event: ${event}`);
       } else {
-        console.log(`No callbacks registered for ${event} event - this is normal if no component needs to handle this event`);
+        loggerService.debug(`No callbacks registered for ${event} event - this is normal if no component needs to handle this event`);
       }
     }
   }

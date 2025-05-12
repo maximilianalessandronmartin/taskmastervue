@@ -4,6 +4,7 @@ import apiService from '../services/api.service';
 import websocketService from '../services/websocket.service';
 import browserNotificationService from '../services/browser-notification.service';
 import { useAuthStore } from './auth.store';
+import loggerService from '../services/logger.service';
 
 /**
  * Interface representing the state of the notification store
@@ -68,66 +69,66 @@ export const useNotificationStore = defineStore('notification', {
      * Fetches existing notifications and sets up WebSocket listeners
      */
     async initialize() {
-      console.log('Initializing notification store');
+      loggerService.info('Initializing notification store');
 
       // If already initialized, skip initialization
       if (this.initialized) {
-        console.log('Notification store already initialized, skipping');
+        loggerService.debug('Notification store already initialized, skipping');
         return;
       }
 
       // Fetch existing notifications
       await this.fetchNotifications();
-      console.log('Fetched initial notifications, count:', this.notifications.length);
-      console.log('Initial unread count:', this.unreadCount);
+      loggerService.info(`Fetched initial notifications, count: ${this.notifications.length}`);
+      loggerService.debug(`Initial unread count: ${this.unreadCount}`);
 
       // Set up WebSocket listener for new notifications
-      console.log('Setting up WebSocket listener for notifications');
+      loggerService.debug('Setting up WebSocket listener for notifications');
       const boundHandler = this.handleNewNotification.bind(this);
-      console.log('Created bound handler for notifications');
+      loggerService.debug('Created bound handler for notifications');
       websocketService.addEventListener('notification', boundHandler);
-      console.log('Added event listener for notifications');
+      loggerService.debug('Added event listener for notifications');
 
       // Connect to WebSocket if not already connected
       if (!websocketService.isConnected.value) {
-        console.log('WebSocket not connected, connecting now');
+        loggerService.info('WebSocket not connected, connecting now');
         websocketService.connect();
       } else {
-        console.log('WebSocket already connected');
+        loggerService.debug('WebSocket already connected');
       }
 
       // Subscribe to notifications for the current user
       // We need to get the user's email from the auth store
-      console.log('Getting user from auth store');
+      loggerService.debug('Getting user from auth store');
       const authStore = useAuthStore();
-      console.log('Auth store user:', authStore.user);
+      loggerService.debug('Auth store user:', authStore.user);
 
       if (authStore.user && authStore.user.username) {
-        console.log(`User found in auth store: ${authStore.user.username}`);
-        console.log('Subscribing to notifications for user');
+        loggerService.info(`User found in auth store: ${authStore.user.username}`);
+        loggerService.debug('Subscribing to notifications for user');
         websocketService.subscribeToNotifications(authStore.user.username);
-        console.log('Subscribed to notifications for user');
+        loggerService.debug('Subscribed to notifications for user');
 
         // Mark as initialized after successful subscription
         this.initialized = true;
-        console.log('Notification store initialized successfully');
+        loggerService.info('Notification store initialized successfully');
       } else {
-        console.log('User not found in auth store, fetching user');
+        loggerService.warn('User not found in auth store, fetching user');
         // If user is not available yet, wait for it to be fetched
         await authStore.fetchUser();
-        console.log('User fetched from API');
+        loggerService.debug('User fetched from API');
 
         if (authStore.user && authStore.user.username) {
-          console.log(`User fetched successfully: ${authStore.user.username}`);
-          console.log('Subscribing to notifications for user');
+          loggerService.info(`User fetched successfully: ${authStore.user.username}`);
+          loggerService.debug('Subscribing to notifications for user');
           websocketService.subscribeToNotifications(authStore.user.username);
-          console.log('Subscribed to notifications for user');
+          loggerService.debug('Subscribed to notifications for user');
 
           // Mark as initialized after successful subscription
           this.initialized = true;
-          console.log('Notification store initialized successfully');
+          loggerService.info('Notification store initialized successfully');
         } else {
-          console.error('Failed to fetch user or user has no username');
+          loggerService.error('Failed to fetch user or user has no username');
         }
       }
     },
@@ -137,38 +138,38 @@ export const useNotificationStore = defineStore('notification', {
      * @param {Notification | NotificationDto} notification - The new notification
      */
     handleNewNotification(notification: Notification | NotificationDto) {
-      console.log('handleNewNotification called with:', notification);
+      loggerService.debug('handleNewNotification called with:', notification);
 
       // Check if the notification is a NotificationDto and convert it if needed
       const notificationObj = 'recipient' in notification && 'username' in notification.recipient
         ? notification as Notification
         : this.convertDtoToNotification(notification as NotificationDto);
 
-      console.log('Notification object after conversion:', notificationObj);
-      console.log('Current notifications count:', this.notifications.length);
-      console.log('Current unread count:', this.unreadCount);
+      loggerService.debug('Notification object after conversion:', notificationObj);
+      loggerService.debug(`Current notifications count: ${this.notifications.length}`);
+      loggerService.debug(`Current unread count: ${this.unreadCount}`);
 
       // Add the notification to the store if it doesn't already exist
       const exists = this.notifications.some(n => n.id === notificationObj.id);
-      console.log('Notification already exists:', exists);
+      loggerService.debug(`Notification already exists: ${exists}`);
 
       if (!exists) {
-        console.log('Adding new notification to store');
+        loggerService.info(`Adding new notification: ${notificationObj.type} - ${notificationObj.message}`);
         // Create a new array to ensure reactivity is triggered
         this.notifications = [notificationObj, ...this.notifications];
-        console.log('New notifications count:', this.notifications.length);
-        console.log('New unread count:', this.unreadCount);
+        loggerService.debug(`New notifications count: ${this.notifications.length}`);
+        loggerService.debug(`New unread count: ${this.unreadCount}`);
 
         // Show browser notification if enabled
         const authStore = useAuthStore();
         if (authStore.user?.notificationsEnabled) {
-          console.log('User has notifications enabled, showing browser notification');
+          loggerService.debug('User has notifications enabled, showing browser notification');
           browserNotificationService.showNotification(notificationObj);
         } else {
-          console.log('User has notifications disabled or preference not set');
+          loggerService.debug('User has notifications disabled or preference not set');
         }
       } else {
-        console.log('Notification already exists, not adding to store');
+        loggerService.debug('Notification already exists, not adding to store');
       }
     },
 
@@ -177,6 +178,7 @@ export const useNotificationStore = defineStore('notification', {
      * @returns {Promise<Notification[]>} The list of notifications
      */
     async fetchNotifications() {
+      loggerService.info('Fetching notifications');
       this.loading = true;
       this.error = null;
 
@@ -184,12 +186,17 @@ export const useNotificationStore = defineStore('notification', {
         const response = await apiService.get<NotificationDto[]>('/notifications');
         // Convert NotificationDto[] to Notification[]
         this.notifications = response.data.map(dto => this.convertDtoToNotification(dto));
+        loggerService.info(`Successfully fetched ${this.notifications.length} notifications`);
+        loggerService.debug(`Unread notifications: ${this.unreadCount}`);
         return this.notifications;
       } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to fetch notifications';
+        const errorMessage = error.response?.data?.message || 'Failed to fetch notifications';
+        this.error = errorMessage;
+        loggerService.error(`Error fetching notifications: ${errorMessage}`, error);
         throw error;
       } finally {
         this.loading = false;
+        loggerService.debug('Notifications fetch completed');
       }
     },
 
@@ -209,11 +216,6 @@ export const useNotificationStore = defineStore('notification', {
           email: dto.recipient.email,
           xp: dto.recipient.xp,
           createdAt: dto.recipient.createdAt,
-          updatedAt: '', // Not provided in NotificationDto
-          enabled: true, // Default values for fields not in NotificationDto
-          accountNonLocked: true,
-          credentialsNonExpired: true,
-          accountNonExpired: true
         } as User,
         type: dto.type,
         message: dto.message,
@@ -228,11 +230,13 @@ export const useNotificationStore = defineStore('notification', {
      * @param {string} notificationId - The ID of the notification to mark as read
      */
     async markAsRead(notificationId: string) {
+      loggerService.debug(`Marking notification as read: ${notificationId}`);
       this.loading = true;
       this.error = null;
 
       try {
         await apiService.post(`/notifications/${notificationId}/read`);
+        loggerService.debug(`API call successful for marking notification ${notificationId} as read`);
 
         // Update the local notification state
         const index = this.notifications.findIndex(n => n.id === notificationId);
@@ -244,13 +248,18 @@ export const useNotificationStore = defineStore('notification', {
             read: true 
           };
           this.notifications = updatedNotifications;
-          console.log('Notification marked as read, new unread count:', this.unreadCount);
+          loggerService.info(`Notification marked as read, new unread count: ${this.unreadCount}`);
+        } else {
+          loggerService.warn(`Notification with ID ${notificationId} not found in local store`);
         }
       } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to mark notification as read';
+        const errorMessage = error.response?.data?.message || 'Failed to mark notification as read';
+        this.error = errorMessage;
+        loggerService.error(`Error marking notification as read: ${errorMessage}`, error);
         throw error;
       } finally {
         this.loading = false;
+        loggerService.debug(`Mark as read operation completed for notification ${notificationId}`);
       }
     },
 
@@ -258,23 +267,30 @@ export const useNotificationStore = defineStore('notification', {
      * Marks all notifications as read
      */
     async markAllAsRead() {
+      loggerService.info('Marking all notifications as read');
       this.loading = true;
       this.error = null;
 
       try {
         await apiService.post('/notifications/read-all');
+        loggerService.debug('API call successful for marking all notifications as read');
 
         // Create a new array with all notifications marked as read to ensure reactivity
+        const previousUnreadCount = this.unreadCount;
         this.notifications = this.notifications.map(notification => ({
           ...notification,
           read: true
         }));
-        console.log('All notifications marked as read, new unread count:', this.unreadCount);
+        loggerService.info(`All notifications marked as read, marked ${previousUnreadCount} notifications as read`);
+        loggerService.debug(`New unread count: ${this.unreadCount}`);
       } catch (error: any) {
-        this.error = error.response?.data?.message || 'Failed to mark all notifications as read';
+        const errorMessage = error.response?.data?.message || 'Failed to mark all notifications as read';
+        this.error = errorMessage;
+        loggerService.error(`Error marking all notifications as read: ${errorMessage}`, error);
         throw error;
       } finally {
         this.loading = false;
+        loggerService.debug('Mark all as read operation completed');
       }
     },
 
@@ -282,6 +298,7 @@ export const useNotificationStore = defineStore('notification', {
      * Clears any error messages in the store
      */
     clearError() {
+      loggerService.debug('Clearing notification store error');
       this.error = null;
     },
 
@@ -291,17 +308,18 @@ export const useNotificationStore = defineStore('notification', {
      * This should be called when the user logs out
      */
     reset() {
-      console.log('Resetting notification store');
+      loggerService.info('Resetting notification store');
 
       // Disconnect from WebSocket
       websocketService.disconnect();
-      console.log('Disconnected from WebSocket');
+      loggerService.debug('Disconnected from WebSocket');
 
       // Reset store state
+      const notificationCount = this.notifications.length;
       this.notifications = [];
       this.error = null;
       this.initialized = false;
-      console.log('Notification store reset');
+      loggerService.info(`Notification store reset, cleared ${notificationCount} notifications`);
     }
   }
 });

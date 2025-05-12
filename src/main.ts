@@ -10,6 +10,16 @@ import App from './App.vue'
 import router from './router'
 import './style.css'
 import './accessibility-override.css'
+import loggerService, { LogLevel } from './services/logger.service'
+
+// Initialize logger
+loggerService.configure({
+  level: process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG,
+  prefix: '[TaskMaster]'
+})
+
+// Log application startup
+loggerService.info('Application starting up')
 
 
 // Import Vuetify and its dependencies
