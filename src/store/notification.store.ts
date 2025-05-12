@@ -235,9 +235,16 @@ export const useNotificationStore = defineStore('notification', {
         await apiService.post(`/notifications/${notificationId}/read`);
 
         // Update the local notification state
-        const notification = this.notifications.find(n => n.id === notificationId);
-        if (notification) {
-          notification.read = true;
+        const index = this.notifications.findIndex(n => n.id === notificationId);
+        if (index !== -1) {
+          // Create a new array with the updated notification to ensure reactivity
+          const updatedNotifications = [...this.notifications];
+          updatedNotifications[index] = { 
+            ...this.notifications[index], 
+            read: true 
+          };
+          this.notifications = updatedNotifications;
+          console.log('Notification marked as read, new unread count:', this.unreadCount);
         }
       } catch (error: any) {
         this.error = error.response?.data?.message || 'Failed to mark notification as read';
@@ -257,10 +264,12 @@ export const useNotificationStore = defineStore('notification', {
       try {
         await apiService.post('/notifications/read-all');
 
-        // Update all notifications in the local state
-        this.notifications.forEach(notification => {
-          notification.read = true;
-        });
+        // Create a new array with all notifications marked as read to ensure reactivity
+        this.notifications = this.notifications.map(notification => ({
+          ...notification,
+          read: true
+        }));
+        console.log('All notifications marked as read, new unread count:', this.unreadCount);
       } catch (error: any) {
         this.error = error.response?.data?.message || 'Failed to mark all notifications as read';
         throw error;

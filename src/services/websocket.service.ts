@@ -19,6 +19,7 @@ class WebSocketService {
   private reconnectTimeout: number | null = null;
   private listeners: Map<string, ((data: any) => void)[]> = new Map();
   private activeTimerSubscriptions: Map<string, { unsubscribe: () => void }> = new Map();
+  private pendingNotificationSubscriptions: string[] = [];
 
   // Reactive state for connection status
   public isConnected = ref(false);
@@ -91,6 +92,12 @@ class WebSocketService {
       this.reconnectTimeout = null;
     }
 
+    // Clear any pending notification subscriptions
+    if (this.pendingNotificationSubscriptions.length > 0) {
+      console.log(`Clearing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
+      this.pendingNotificationSubscriptions = [];
+    }
+
     this.reconnectAttempts = 0;
   }
 
@@ -102,7 +109,18 @@ class WebSocketService {
     console.log(`Subscribing to notifications for user: ${userEmail}`);
 
     if (!this.stompClient || !this.stompClient.connected) {
-      console.error('STOMP client is not connected');
+      console.log('STOMP client is not connected, queueing subscription request');
+      // Add to pending subscriptions if not already in the queue
+      if (!this.pendingNotificationSubscriptions.includes(userEmail)) {
+        this.pendingNotificationSubscriptions.push(userEmail);
+        console.log(`Queued notification subscription for user: ${userEmail}`);
+      }
+
+      // If not connected at all, try to connect
+      if (!this.stompClient) {
+        console.log('No STOMP client exists, attempting to connect');
+        this.connect();
+      }
       return;
     }
 
@@ -140,6 +158,7 @@ class WebSocketService {
     });
 
     console.log('Subscription created successfully:', subscription.id);
+    console.log(`Successfully subscribed to notifications topic for user: ${userEmail}`);
   }
 
   /**
@@ -238,6 +257,23 @@ class WebSocketService {
     console.log('STOMP connection established:', frame);
     this.isConnected.value = true;
     this.reconnectAttempts = 0;
+
+    // Process any pending notification subscriptions
+    if (this.pendingNotificationSubscriptions.length > 0) {
+      console.log(`Processing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
+
+      // Create a copy of the array to avoid modification during iteration
+      const pendingSubscriptions = [...this.pendingNotificationSubscriptions];
+
+      // Clear the pending subscriptions array
+      this.pendingNotificationSubscriptions = [];
+
+      // Process each pending subscription
+      pendingSubscriptions.forEach(userEmail => {
+        console.log(`Processing queued subscription for user: ${userEmail}`);
+        this.subscribeToNotifications(userEmail);
+      });
+    }
 
     // Emit the connection event
     this.emitEvent('connection', { connected: true });

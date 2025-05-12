@@ -77,6 +77,29 @@ class TimerService {
   }
 
   /**
+   * Reconnect to all active timers
+   * This is useful when returning to the tasks screen or reopening the app
+   */
+  public reconnectToActiveTimers(): void {
+    console.log('Reconnecting to active timers');
+
+    // Get all tasks with active timers from the activeTimers map
+    const activeTimerTaskIds = Array.from(this.activeTimers.value.entries())
+      .filter(([_, timerInfo]) => timerInfo.timerActive)
+      .map(([taskId, _]) => taskId);
+
+    console.log(`Found ${activeTimerTaskIds.length} active timers to reconnect to`);
+
+    // Unsubscribe from all timers first to avoid duplicate subscriptions
+    this.unsubscribeFromAllTimers();
+
+    // Subscribe to each active timer
+    activeTimerTaskIds.forEach(taskId => {
+      this.subscribeToTaskTimer(taskId);
+    });
+  }
+
+  /**
    * Subscribe to timer updates for a task
    * @param taskId The ID of the task to subscribe to timer updates for
    * @param callback Optional callback function to call when a timer update is received

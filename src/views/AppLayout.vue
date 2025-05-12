@@ -2,11 +2,13 @@
 import { onMounted, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../store/auth.store';
+import { useNotificationStore } from '../store/notification.store';
 import NotificationIcon from '../components/NotificationIcon.vue';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
+const notificationStore = useNotificationStore();
 
 const currentTab = computed(() => {
   const path = route.path;
@@ -32,6 +34,14 @@ onMounted(async () => {
   // Fetch user data when the app layout is mounted
   try {
     await authStore.fetchUser();
+
+    // Initialize notification system to ensure instant notifications
+    if (!notificationStore.isInitialized) {
+      console.log('AppLayout: Initializing notification store');
+      await notificationStore.initialize();
+    } else {
+      console.log('AppLayout: Notification store already initialized');
+    }
   } catch (error) {
     console.error('Failed to fetch user data:', error);
     // If fetching user data fails, redirect to login

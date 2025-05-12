@@ -112,16 +112,26 @@ const getTaskRemainingTime = (taskId: string) => {
 const fetchTasks = async () => {
   loading.value = true;
   try {
-    if (taskTypeFilter.value === 'shared') {
-      await taskStore.fetchSharedTasks();
-    } else {
-      // For 'owned' or 'all', use fetchAllTasks with appropriate type
-      await taskStore.fetchAllTasks(taskTypeFilter.value === 'all' ? undefined : taskTypeFilter.value);
-    }
+    // Check if we already have tasks loaded
+    const hasExistingTasks = taskStore.getTasks.length > 0 || taskStore.getSharedTasks.length > 0;
 
-    // Initialize timers with the fetched tasks
-    const allTasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
-    timerService.initializeTimers(allTasks);
+    if (hasExistingTasks) {
+      console.log('Tasks already loaded, reconnecting to active timers');
+      // If tasks are already loaded, just reconnect to active timers
+      timerService.reconnectToActiveTimers();
+    } else {
+      // Otherwise, fetch tasks from the server
+      if (taskTypeFilter.value === 'shared') {
+        await taskStore.fetchSharedTasks();
+      } else {
+        // For 'owned' or 'all', use fetchAllTasks with appropriate type
+        await taskStore.fetchAllTasks(taskTypeFilter.value === 'all' ? undefined : taskTypeFilter.value);
+      }
+
+      // Initialize timers with the fetched tasks
+      const allTasks = [...taskStore.getTasks, ...taskStore.getSharedTasks];
+      timerService.initializeTimers(allTasks);
+    }
   } catch (error) {
     console.error('Failed to fetch tasks:', error);
   } finally {
@@ -268,19 +278,8 @@ const openTaskDetailsDialog = (task: TaskDto) => {
     timerCountdown.value = 0;
   }
 
-  // Subscribe to timer updates for this task
-  if (selectedTask.value) {
-    timerService.subscribeToTaskTimer(selectedTask.value.id, (timerUpdate) => {
-      // Update the timer countdown
-      timerCountdown.value = timerUpdate.remainingTimeMillis;
-
-      // Update the task's timer state
-      if (selectedTask.value) {
-        selectedTask.value.remainingTimeMillis = timerUpdate.remainingTimeMillis;
-        selectedTask.value.timerActive = timerUpdate.timerActive;
-      }
-    });
-  }
+  // We don't need to subscribe to timer updates here anymore
+  // Active timers are already subscribed to in the timer service
 };
 
 // Timer methods
@@ -391,24 +390,72 @@ watch(taskTypeFilter, (_) => {
 // Watch for dialog close
 watch(detailsDialog, (isOpen) => {
   if (!isOpen && selectedTask.value) {
-    // When dialog is closed, unsubscribe from timer updates for the selected task
-    // This prevents multiple subscriptions when the dialog is opened and closed multiple times
-    timerService.unsubscribeFromTask(selectedTask.value.id);
-    console.log('Detail dialog closed, unsubscribed from timer updates');
+    // We don't need to unsubscribe from timer updates here anymore
+    // We want to stay subscribed to all active timers
+    console.log('Detail dialog closed');
   }
 });
+
+// Watch for changes in active timers to update the timer countdown for the selected task
+watch(() => timerService.getActiveTimers().value, (activeTimers) => {
+  if (selectedTask.value && detailsDialog.value) {
+    const taskId = selectedTask.value.id;
+    const timerInfo = activeTimers.get(taskId);
+
+    if (timerInfo) {
+      // Update the timer countdown
+      timerCountdown.value = timerInfo.remainingTimeMillis;
+
+      // Update the task's timer state
+      selectedTask.value.remainingTimeMillis = timerInfo.remainingTimeMillis;
+      selectedTask.value.timerActive = timerInfo.timerActive;
+    }
+  }
+}, { deep: true });
+
+// Track when the document became hidden
+let documentHiddenTime: number | null = null;
+
+// Handle visibility change (when tab becomes visible again or app is reopened)
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'hidden') {
+    // Store the time when the document became hidden
+    documentHiddenTime = Date.now();
+  } else if (document.visibilityState === 'visible') {
+    console.log('Document became visible, reconnecting to active timers');
+
+    // If the document was hidden for more than 30 seconds, refresh the task data
+    if (documentHiddenTime && (Date.now() - documentHiddenTime > 30000)) {
+      console.log('Document was hidden for more than 30 seconds, refreshing task data');
+      // Fetch tasks to get the latest data
+      fetchTasks();
+    } else {
+      // Otherwise, just reconnect to active timers
+      timerService.reconnectToActiveTimers();
+    }
+
+    // Reset the hidden time
+    documentHiddenTime = null;
+  }
+};
 
 // Lifecycle hooks
 onMounted(() => {
   // Initialize with the default filter (all)
   taskTypeFilter.value = 'all';
   fetchTasks();
+
+  // Add visibility change event listener
+  document.addEventListener('visibilitychange', handleVisibilityChange);
 });
 
 // Clean up when component is unmounted
 onUnmounted(() => {
   // Clean up timer service resources
   timerService.cleanup();
+
+  // Remove visibility change event listener
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 
   console.log('Component unmounted, timer subscriptions cleaned up');
 });
