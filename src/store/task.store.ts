@@ -142,13 +142,7 @@ export const useTaskStore = defineStore('task', {
       return handleApiCall(this, async () => {
         const shareData: ShareTaskDto = { username };
         const updatedTask = await taskService.shareTask(id, shareData);
-        const index = this.tasks.findIndex(task => task.id === id);
-        if (index !== -1) {
-          this.tasks[index] = updatedTask;
-        }
-        if (this.currentTask?.id === id) {
-          this.currentTask = updatedTask;
-        }
+        this.updateTaskInStore(id, updatedTask);
         return updatedTask;
       });
     },
@@ -156,13 +150,7 @@ export const useTaskStore = defineStore('task', {
     async unshareTask(id: string, username: string) {
       return handleApiCall(this, async () => {
         const updatedTask = await taskService.unshareTask(id, username);
-        const index = this.tasks.findIndex(task => task.id === id);
-        if (index !== -1) {
-          this.tasks[index] = updatedTask;
-        }
-        if (this.currentTask?.id === id) {
-          this.currentTask = updatedTask;
-        }
+        this.updateTaskInStore(id, updatedTask);
         return updatedTask;
       });
     },

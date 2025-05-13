@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useNotificationStore } from '../store/notification.store';
 import type { Notification } from '../types/models';
+import { formatDate, formatTime } from '../utils/formatters';
 
 const props = defineProps<{
   show: boolean;
@@ -34,9 +35,8 @@ const notifications = computed(() => notificationStore.allNotifications);
 const hasNotifications = computed(() => notifications.value.length > 0);
 
 // Format the notification date to a readable format
-const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleString();
+const formatDateTime = (dateString: string): string => {
+  return `${formatDate(dateString)} ${formatTime(dateString)}`;
 };
 
 // Get the appropriate icon for the notification type
@@ -128,7 +128,7 @@ const closeDrawer = () => {
           </template>
 
           <v-list-item-title>{{ notification.message }}</v-list-item-title>
-          <v-list-item-subtitle>{{ formatDate(notification.createdAt) }}</v-list-item-subtitle>
+          <v-list-item-subtitle>{{ formatDateTime(notification.createdAt) }}</v-list-item-subtitle>
 
           <template v-slot:append>
             <v-btn
@@ -169,7 +169,7 @@ const closeDrawer = () => {
       <v-card-text>
         <v-list-item>
           <v-list-item-title class="text-h6">{{ selectedNotification.message }}</v-list-item-title>
-          <v-list-item-subtitle>{{ formatDate(selectedNotification.createdAt) }}</v-list-item-subtitle>
+          <v-list-item-subtitle>{{ formatDateTime(selectedNotification.createdAt) }}</v-list-item-subtitle>
         </v-list-item>
 
         <v-divider class="my-3"></v-divider>

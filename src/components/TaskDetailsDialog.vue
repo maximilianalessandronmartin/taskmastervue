@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { type TaskDto } from '../types/models';
 import PomodoroTimer from './PomodoroTimer.vue';
+import { formatDate, formatTime, formatTimeDisplay, getUrgencyColor } from '../utils/formatters';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -24,40 +25,7 @@ const emit = defineEmits<{
 const dialogOpen = ref(props.modelValue);
 const activeTab = ref('details'); // Default to details tab
 
-// Utility functions
-const formatDate = (dateString: string) => {
-  if (!dateString) return 'No due date';
-  const date = new Date(dateString);
-  return date.toLocaleDateString();
-};
-
-const formatTime = (dateString: string) => {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
-const getUrgencyColor = (urgency: string) => {
-  switch (urgency) {
-    case 'HIGH':
-      return 'error';
-    case 'MEDIUM':
-      return 'warning';
-    case 'LOW':
-      return 'success';
-    default:
-      return 'info';
-  }
-};
-
-// Format milliseconds to MM:SS display
-const formatTimeDisplay = (millis: number) => {
-  if (millis <= 0) return '00:00';
-  const totalSeconds = Math.floor(millis / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const remainingSeconds = totalSeconds % 60;
-  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-};
+// Utility functions are now imported from formatters.ts
 
 // Event handlers
 const closeDialog = () => {

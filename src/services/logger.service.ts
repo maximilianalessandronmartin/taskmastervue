@@ -25,7 +25,7 @@ interface LoggerConfig {
 
 class LoggerService {
   private config: LoggerConfig = {
-    level: process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG,
+    level: import.meta.env.VITE_LOG_LEVEL === 'production' ? LogLevel.INFO : LogLevel.DEBUG,
     enableConsole: true,
     prefix: '[TaskMaster]'
   };

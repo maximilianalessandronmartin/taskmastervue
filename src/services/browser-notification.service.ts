@@ -186,6 +186,6 @@ class BrowserNotificationService {
 }
 
 // Create a singleton instance of the browser notification service
-export const browserNotificationService = new BrowserNotificationService();
+export const   browserNotificationService = new BrowserNotificationService();
 
 export default browserNotificationService;

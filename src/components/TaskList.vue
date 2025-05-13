@@ -11,11 +11,21 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'complete', taskId: string): void;
+  (e: 'uncomplete', taskId: string): void;
+  (e: 'delete', taskId: string): void;
   (e: 'view-details', task: TaskDto): void;
 }>();
 
 const onTaskComplete = (taskId: string) => {
   emit('complete', taskId);
+};
+
+const onTaskUncomplete = (taskId: string) => {
+  emit('uncomplete', taskId);
+};
+
+const onTaskDelete = (taskId: string) => {
+  emit('delete', taskId);
 };
 
 const onViewTaskDetails = (task: TaskDto) => {
@@ -34,6 +44,8 @@ const onViewTaskDetails = (task: TaskDto) => {
         :has-active-timer="hasActiveTimer"
         :get-task-remaining-time="getTaskRemainingTime"
         @complete="onTaskComplete"
+        @uncomplete="onTaskUncomplete"
+        @delete="onTaskDelete"
         @view-details="onViewTaskDetails"
       />
     </v-list>

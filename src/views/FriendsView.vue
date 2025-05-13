@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useFriendshipStore } from '../store/friendship.store';
 import { type Friendship } from '../types/models';
+import { formatDate } from '../utils/formatters';
 
 const friendshipStore = useFriendshipStore();
 
@@ -114,11 +115,7 @@ const clearMessages = () => {
   success.value = '';
 };
 
-const formatDate = (dateString: string) => {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  return date.toLocaleDateString();
-};
+// formatDate is now imported from formatters.ts
 
 const getFriendName = (friendship: Friendship) => {
   return `${friendship.friend.firstname} ${friendship.friend.lastname}`;

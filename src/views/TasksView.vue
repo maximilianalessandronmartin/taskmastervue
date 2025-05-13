@@ -211,11 +211,32 @@ const completeTask = async (taskId: string) => {
   }
 };
 
-const deleteTask = async (taskId: string) => {
-  if (!confirm('Are you sure you want to delete this task?')) {
-    return;
-  }
+const uncompleteTask = async (taskId: string) => {
+  loading.value = true;
+  try {
+    // Find the task in the filtered tasks
+    const task = filteredTasks.value.find(t => t.id === taskId);
+    if (task) {
+      // Create an update DTO with completed set to false
+      const updateDto: UpdateTaskDto = {
+        name: task.name,
+        description: task.description,
+        dueDate: task.dueDate,
+        urgency: task.urgency,
+        completed: false
+      };
 
+      // Update the task
+      await taskStore.updateTask(taskId, updateDto);
+    }
+  } catch (error) {
+    console.error('Failed to uncomplete task:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const deleteTask = async (taskId: string) => {
   loading.value = true;
   try {
     await taskStore.deleteTask(taskId);
@@ -226,39 +247,7 @@ const deleteTask = async (taskId: string) => {
   }
 };
 
-const formatDate = (dateString: string) => {
-  if (!dateString) return 'No due date';
-  const date = new Date(dateString);
-  return date.toLocaleDateString();
-};
-
-const formatTime = (dateString: string) => {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
-// Format milliseconds to MM:SS display
-const formatTimeDisplay = (millis: number) => {
-  if (millis <= 0) return '00:00';
-  const totalSeconds = Math.floor(millis / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const remainingSeconds = totalSeconds % 60;
-  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-};
-
-const getUrgencyColor = (urgency: string) => {
-  switch (urgency) {
-    case 'HIGH':
-      return 'error';
-    case 'MEDIUM':
-      return 'warning';
-    case 'LOW':
-      return 'success';
-    default:
-      return 'info';
-  }
-};
+// Formatter functions are now imported from formatters.ts
 
 const openShareDialog = (task: TaskDto) => {
   currentTask.value = task;
@@ -278,8 +267,6 @@ const openTaskDetailsDialog = (task: TaskDto) => {
     timerCountdown.value = 0;
   }
 
-  // We don't need to subscribe to timer updates here anymore
-  // Active timers are already subscribed to in the timer service
 };
 
 // Timer methods
@@ -350,15 +337,12 @@ const shareTask = async (username: string) => {
   }
 
   try {
-    await taskSharingService.shareTask(currentTask.value.id, username);
+    // Use the store's shareTask method to ensure proper state updates
+    const updatedTask = await taskStore.shareTask(currentTask.value.id, username);
 
-    // Update the currentTask after sharing
+    // Update the currentTask with the returned updated task
     if (currentTask.value) {
-      // Find the task in the filtered tasks
-      const updatedTask = filteredTasks.value.find(task => task.id === currentTask.value?.id);
-      if (updatedTask) {
-        currentTask.value = updatedTask;
-      }
+      currentTask.value = updatedTask;
     }
   } catch (error) {
     console.error('Failed to share task:', error);
@@ -367,15 +351,12 @@ const shareTask = async (username: string) => {
 
 const unshareTask = async (taskId: string, username: string) => {
   try {
-    await taskSharingService.unshareTask(taskId, username);
+    // Use the store's unshareTask method to ensure proper state updates
+    const updatedTask = await taskStore.unshareTask(taskId, username);
 
     // Update the currentTask if it's the one being unshared
     if (currentTask.value && currentTask.value.id === taskId) {
-      // Find the task in the filtered tasks
-      const updatedTask = filteredTasks.value.find(task => task.id === taskId);
-      if (updatedTask) {
-        currentTask.value = updatedTask;
-      }
+      currentTask.value = updatedTask;
     }
   } catch (error) {
     console.error('Failed to unshare task:', error);
@@ -483,6 +464,8 @@ onUnmounted(() => {
       :has-active-timer="hasActiveTimer"
       :get-task-remaining-time="getTaskRemainingTime"
       @complete="completeTask"
+      @uncomplete="uncompleteTask"
+      @delete="deleteTask"
       @view-details="openTaskDetailsDialog"
     />
 

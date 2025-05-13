@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue';
 import { type TaskDto } from '../types/models';
+import { formatTimeDisplay } from '../utils/formatters';
 
 const props = defineProps<{
   task: TaskDto;
@@ -18,14 +19,7 @@ const emit = defineEmits<{
 // Initialize with default value of 25 minutes, not tied to timerCountdown
 const pomodoroMinutes = ref(25);
 
-// Format milliseconds to MM:SS display
-const formatTimeDisplay = (millis: number) => {
-  if (millis <= 0) return '00:00';
-  const totalSeconds = Math.floor(millis / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const remainingSeconds = totalSeconds % 60;
-  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-};
+// formatTimeDisplay is now imported from formatters.ts
 
 // Timer control methods
 const startTimer = () => {
