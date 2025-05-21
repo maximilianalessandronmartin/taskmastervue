@@ -23,8 +23,6 @@ FROM nginx:stable-alpine
 # Copy the built app from the previous stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose only port 3000 for the application
 EXPOSE 3000
