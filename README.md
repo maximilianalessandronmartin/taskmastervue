@@ -145,7 +145,7 @@ docker-compose up app-prod --build
    docker-compose up app-prod --build
    ```
 
-4. Access the application at `http://<raspberry-pi-ip>:80`
+4. Access the application at `http://<raspberry-pi-ip>:3000`
 
 #### Notes for Raspberry Pi Deployment
 - The Docker images used (node:20-alpine and nginx:stable-alpine) are compatible with ARM64 architecture
