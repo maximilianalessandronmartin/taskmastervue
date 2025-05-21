@@ -36,5 +36,9 @@ export default defineConfig({
         }
       }
     }
+  },
+  server: {
+    port: 3000,
+    host: true  // Ermöglicht den Zugriff von außen
   }
 })
