@@ -23,14 +23,17 @@ function updateUrgencyFilter(value: string) {
   emit('update:urgencyFilter', value);
 }
 
-function updateShowCompleted(value: boolean) {
-  localShowCompleted.value = value;
-  emit('update:showCompleted', value);
+function updateShowCompleted(value: boolean | null) {
+  // If value is null, default to false
+  const boolValue = value === null ? false : value;
+  localShowCompleted.value = boolValue;
+  emit('update:showCompleted', boolValue);
 }
 
-function updatePanelOpen(value: number) {
-  localPanelOpen.value = value;
-  emit('update:panelOpen', value);
+function updatePanelOpen(value: unknown) {
+  const numValue = value as number;
+  localPanelOpen.value = numValue;
+  emit('update:panelOpen', numValue);
 }
 </script>
 

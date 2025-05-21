@@ -164,7 +164,7 @@ class TimerService {
    * Unsubscribe from all timer subscriptions
    */
   public unsubscribeFromAllTimers(): void {
-    this.timerSubscriptions.forEach((subscription, taskId) => {
+    this.timerSubscriptions.forEach((subscription, _) => {
       subscription.unsubscribe();
     });
     this.timerSubscriptions.clear();

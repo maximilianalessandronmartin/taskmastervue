@@ -2,7 +2,7 @@
 import { type TaskDto } from '../types/models';
 import TaskItem from './TaskItem.vue';
 
-const props = defineProps<{
+defineProps<{
   tasks: TaskDto[];
   loading: boolean;
   hasActiveTimer: (taskId: string) => boolean;

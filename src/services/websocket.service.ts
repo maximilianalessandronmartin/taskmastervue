@@ -206,7 +206,7 @@ class WebSocketService {
       loggerService.debug(`Received timer update for task: ${taskId}`);
       try {
         const timerUpdate = JSON.parse(message.body) as TimerUpdateDto;
-        loggerService.debug(`Timer update details: status=${timerUpdate.status}, timeRemaining=${timerUpdate.timeRemaining}`);
+        loggerService.debug(`Timer update details: timerActive=${timerUpdate.timerActive}, remainingTimeMillis=${timerUpdate.remainingTimeMillis}`);
         callback(timerUpdate);
       } catch (error) {
         loggerService.error(`Failed to parse timer update message for task ${taskId}:`, error);

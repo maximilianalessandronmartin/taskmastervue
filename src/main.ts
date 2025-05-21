@@ -14,7 +14,7 @@ import loggerService, { LogLevel } from './services/logger.service'
 
 // Initialize logger
 loggerService.configure({
-  level: process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG,
+  level: import.meta.env.PROD ? LogLevel.INFO : LogLevel.DEBUG,
   prefix: '[TaskMaster]'
 })
 
