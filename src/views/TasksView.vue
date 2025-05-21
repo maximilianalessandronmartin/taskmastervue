@@ -3,7 +3,6 @@ import {ref, onMounted, computed, watch, onUnmounted} from 'vue';
 import {useTaskStore} from '../store/task.store';
 import timerService from '../services/timer.service';
 import taskSharingService from '../services/task-sharing.service';
-import { formatDate, formatTime, formatTimeDisplay, getUrgencyColor } from '../utils/formatters';
 
 import {
   type CreateTaskDto,
@@ -521,5 +520,6 @@ onUnmounted(() => {
   position: fixed;
   bottom: 70px;
   right: 16px;
+  z-index: 999;
 }
 </style>
