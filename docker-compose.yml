@@ -37,3 +37,5 @@ services:
 networks:
   taskquest-network:
     external: true
+    name: taskquest_taskquest-network
+
