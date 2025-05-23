@@ -25,10 +25,30 @@ interface LoggerConfig {
 
 class LoggerService {
   private config: LoggerConfig = {
-    level: import.meta.env.VITE_LOG_LEVEL === 'production' ? LogLevel.INFO : LogLevel.DEBUG,
+    level: LogLevel.INFO, // Default to INFO, will be updated based on environment
     enableConsole: true,
     prefix: '[TaskMaster]'
   };
+
+  constructor() {
+    // Initialize with default values
+    // The actual environment-based configuration will be set later
+    // when the application starts
+  }
+
+  /**
+   * Initialize logger with environment settings
+   * This should be called after the app is initialized
+   */
+  initializeFromEnv(): void {
+    try {
+      const isProd = import.meta.env.MODE === 'production';
+      this.config.level = isProd ? LogLevel.INFO : LogLevel.DEBUG;
+    } catch (error) {
+      // Fallback if environment variables are not available
+      this.config.level = LogLevel.INFO;
+    }
+  }
 
   /**
    * Configure the logger
