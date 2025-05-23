@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useNotificationStore } from '../store/notification.store';
 import NotificationList from './NotificationList.vue';
+import websocketService from '../services/websocket.service';
+
 
 const notificationStore = useNotificationStore();
 const showNotifications = ref(false);
@@ -36,6 +38,15 @@ onMounted(async () => {
     console.log('NotificationIcon: Notification store already initialized, skipping');
   }
 });
+
+// Watch for new notifications and update the badge
+watch(() => websocketService.notifications.value, (newNotifications) => {
+  if (newNotifications.length > 0) {
+    // Der Store wird die neuen Benachrichtigungen durch den EventListener verarbeiten
+    // Der Zähler wird automatisch durch das computed-Property aktualisiert
+  }
+}, { deep: true });
+
 
 // Disconnect from WebSocket when the component is unmounted
 onUnmounted(() => {

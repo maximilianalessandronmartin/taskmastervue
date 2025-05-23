@@ -2,6 +2,11 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
+import {isProductionMode} from "./src/utils/helper.ts";
+
+
+
+
 
 export default defineConfig({
   plugins: [
@@ -26,7 +31,21 @@ export default defineConfig({
   },
   // Stellen Sie sicher, dass der Build korrekt konfiguriert ist
   build: {
-    sourcemap: true,
+    sourcemap: !isProductionMode(),
+    ...(isProductionMode() && {
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: true,
+          drop_debugger: true
+        },
+        output: {
+          comments: false
+        }
+      }
+    }),
+
+
     // Verbessern Sie die Chunk-Größe und verhindern Sie Probleme mit dem Code-Splitting
     rollupOptions: {
       output: {
