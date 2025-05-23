@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useNotificationStore } from '../store/notification.store';
 import NotificationList from './NotificationList.vue';
 import websocketService from '../services/websocket.service';
+import loggerService from "../services/logger.service.ts";
 
 
 const notificationStore = useNotificationStore();
@@ -40,12 +41,23 @@ onMounted(async () => {
 });
 
 // Watch for new notifications and update the badge
+// Watch for new notifications and update the notification store
 watch(() => websocketService.notifications.value, (newNotifications) => {
   if (newNotifications.length > 0) {
-    // Der Store wird die neuen Benachrichtigungen durch den EventListener verarbeiten
-    // Der Zähler wird automatisch durch das computed-Property aktualisiert
+    loggerService.debug(`Detected ${newNotifications.length} notifications from websocket service`);
+    // Actively process each new notification through the store
+    newNotifications.forEach(notification => {
+      notificationStore.handleNewNotification(notification);
+    });
+
+    // Refresh the notification list to ensure UI is updated
+    notificationStore.fetchNotifications();
   }
 }, { deep: true });
+
+
+
+
 
 
 // Disconnect from WebSocket when the component is unmounted
