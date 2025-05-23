@@ -71,11 +71,16 @@ export const useNotificationStore = defineStore('notification', {
     async initialize() {
       loggerService.info('Initializing notification store');
 
+      // Log current state
+      loggerService.debug(`Current initialized state: ${this.initialized}`);
+      loggerService.debug(`Current websocket connected state: ${websocketService.isConnected.value}`);
+
       // If already initialized, skip initialization
       if (this.initialized) {
         loggerService.debug('Notification store already initialized, skipping');
         return;
       }
+
 
       // Fetch existing notifications
       await this.fetchNotifications();
