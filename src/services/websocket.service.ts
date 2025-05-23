@@ -20,7 +20,7 @@ class WebSocketService {
   private reconnectTimeout: number | null = null;
   private listeners: Map<string, ((data: any) => void)[]> = new Map();
   private activeTimerSubscriptions: Map<string, { unsubscribe: () => void }> = new Map();
-  private pendingNotificationSubscriptions: string[] = [];
+  private pendingNotificationSubscription: boolean = false;
 
   // Reactive state for connection status
   public isConnected = ref(false);
@@ -107,10 +107,10 @@ class WebSocketService {
       this.reconnectTimeout = null;
     }
 
-    // Clear any pending notification subscriptions
-    if (this.pendingNotificationSubscriptions.length > 0) {
-      loggerService.debug(`Clearing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
-      this.pendingNotificationSubscriptions = [];
+    // Clear any pending notification subscription
+    if (this.pendingNotificationSubscription) {
+      loggerService.debug('Clearing pending notification subscription');
+      this.pendingNotificationSubscription = false;
     }
 
     this.reconnectAttempts = 0;
@@ -118,18 +118,18 @@ class WebSocketService {
   }
 
   /**
-   * Subscribe to notifications for a specific user
-   * @param userEmail The email of the user to subscribe to notifications for
+   * Subscribe to notifications for the current user
+   * Spring uses the session ID for routing notifications, so no user identifier is needed.
    */
-  public subscribeToNotifications(userEmail: string): void {
-    loggerService.info(`Subscribing to notifications for user: ${userEmail}`);
+  public subscribeToNotifications(): void {
+    loggerService.info('Subscribing to notifications');
 
     if (!this.stompClient || !this.stompClient.connected) {
       loggerService.warn('STOMP client is not connected, queueing subscription request');
-      // Add to pending subscriptions if not already in the queue
-      if (!this.pendingNotificationSubscriptions.includes(userEmail)) {
-        this.pendingNotificationSubscriptions.push(userEmail);
-        loggerService.debug(`Queued notification subscription for user: ${userEmail}`);
+      // Mark that we have a pending subscription
+      if (!this.pendingNotificationSubscription) {
+        this.pendingNotificationSubscription = true;
+        loggerService.debug('Queued notification subscription');
       }
 
       // If not connected at all, try to connect
@@ -147,8 +147,10 @@ class WebSocketService {
     loggerService.debug('Got notification store instance');
 
     // Subscribe to the user-specific notification channel
-    loggerService.debug(`Subscribing to channel: /user/${userEmail}/queue/notifications`);
-    const subscription = this.stompClient.subscribe(`/user/${userEmail}/queue/notifications`, (message: IMessage) => {
+    // Spring transforms /user/{username}/queue/notifications to /queue/notifications-user{session-id}
+    // So we use the simplified path that Spring will handle with the session ID
+    loggerService.debug(`Subscribing to channel: /user/queue/notifications`);
+    const subscription = this.stompClient.subscribe(`/user/queue/notifications`, (message: IMessage) => {
       loggerService.debug('Raw notification message received');
 
       try {
@@ -175,7 +177,7 @@ class WebSocketService {
     });
 
     loggerService.debug(`Subscription created successfully: ${subscription.id}`);
-    loggerService.info(`Successfully subscribed to notifications topic for user: ${userEmail}`);
+    loggerService.info('Successfully subscribed to notifications topic');
   }
 
   /**
@@ -287,21 +289,16 @@ class WebSocketService {
     this.isConnected.value = true;
     this.reconnectAttempts = 0;
 
-    // Process any pending notification subscriptions
-    if (this.pendingNotificationSubscriptions.length > 0) {
-      loggerService.info(`Processing ${this.pendingNotificationSubscriptions.length} pending notification subscriptions`);
+    // Process any pending notification subscription
+    if (this.pendingNotificationSubscription) {
+      loggerService.info('Processing pending notification subscription');
 
-      // Create a copy of the array to avoid modification during iteration
-      const pendingSubscriptions = [...this.pendingNotificationSubscriptions];
+      // Clear the pending subscription flag
+      this.pendingNotificationSubscription = false;
 
-      // Clear the pending subscriptions array
-      this.pendingNotificationSubscriptions = [];
-
-      // Process each pending subscription
-      pendingSubscriptions.forEach(userEmail => {
-        loggerService.debug(`Processing queued subscription for user: ${userEmail}`);
-        this.subscribeToNotifications(userEmail);
-      });
+      // Process the pending subscription
+      loggerService.debug('Processing queued subscription');
+      this.subscribeToNotifications();
     }
 
     // Emit the connection event

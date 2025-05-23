@@ -110,9 +110,9 @@ export const useNotificationStore = defineStore('notification', {
 
       if (authStore.user && authStore.user.username) {
         loggerService.info(`User found in auth store: ${authStore.user.username}`);
-        loggerService.debug('Subscribing to notifications for user');
-        websocketService.subscribeToNotifications(authStore.user.username);
-        loggerService.debug('Subscribed to notifications for user');
+        loggerService.debug('Subscribing to notifications');
+        websocketService.subscribeToNotifications();
+        loggerService.debug('Subscribed to notifications');
 
         // Mark as initialized after successful subscription
         this.initialized = true;
@@ -125,9 +125,9 @@ export const useNotificationStore = defineStore('notification', {
 
         if (authStore.user && authStore.user.username) {
           loggerService.info(`User fetched successfully: ${authStore.user.username}`);
-          loggerService.debug('Subscribing to notifications for user');
-          websocketService.subscribeToNotifications(authStore.user.username);
-          loggerService.debug('Subscribed to notifications for user');
+          loggerService.debug('Subscribing to notifications');
+          websocketService.subscribeToNotifications();
+          loggerService.debug('Subscribed to notifications');
 
           // Mark as initialized after successful subscription
           this.initialized = true;
